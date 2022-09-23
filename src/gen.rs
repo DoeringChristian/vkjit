@@ -2,9 +2,18 @@ use std::sync::{Arc, Mutex};
 
 use crate::ir::*;
 
+#[derive(Clone, Debug)]
 pub struct VarRef {
     ir: Arc<Mutex<Ir>>,
     idx: usize,
+}
+
+impl std::ops::Add for VarRef {
+    type Output = VarRef;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        todo!()
+    }
 }
 
 pub fn linespace(start: f32, end: f32, num: usize, ir: &Arc<Mutex<Ir>>) -> VarRef {
