@@ -72,6 +72,6 @@ mod tests {
         let b = linespace(0., 10., 10, &ir);
         let c = a + b;
 
-        println!("{:?}", ir);
+        println!("{:#?}", ir);
     }
 }
