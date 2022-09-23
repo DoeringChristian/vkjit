@@ -1,7 +1,7 @@
 pub enum Var {
     Array {
-        size: Option<usize>, // Size of the variable
-        access: Vec<usize>,  // Opperations accessing the variable
+        num: Option<usize>, // Size of the variable
+        access: Vec<usize>, // Opperations accessing the variable
     },
 }
 
@@ -16,11 +16,29 @@ pub enum Op {
     },
     Linspace {
         dst: usize,
-        size: usize,
+        start: f32,
+        end: f32,
+        num: usize,
     },
 }
 
 pub struct Ir {
     pub vars: Vec<Var>,
     pub ops: Vec<Op>,
+}
+
+impl Ir {
+    pub fn new() -> Self {
+        Self {
+            vars: vec![],
+            ops: vec![],
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test01() {}
 }

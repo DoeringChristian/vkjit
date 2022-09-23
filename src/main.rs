@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 mod buffer;
 mod device;
+mod gen;
 mod ir;
 mod kernel;
 
