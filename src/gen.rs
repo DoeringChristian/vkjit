@@ -13,7 +13,7 @@ pub fn linespace(start: f32, end: f32, num: usize, ir: &Arc<Mutex<Ir>>) -> VarRe
     let opidx = ir_mg.ops.len();
     ir_mg.vars.push(Var {
         size: Some(num),
-        access: vec![opidx],
+        access: vec![Access::write(opidx)],
     });
     ir_mg.ops.push(Op::Linspace {
         dst: varidx,
@@ -36,10 +36,10 @@ pub fn add(src0: &VarRef, src1: &VarRef) -> VarRef {
 
     ir_mg.vars.push(Var {
         size: None,
-        access: vec![opidx],
+        access: vec![Access::write(opidx)],
     });
-    ir_mg.vars[src0.idx].access.push(opidx);
-    ir_mg.vars[src1.idx].access.push(opidx);
+    ir_mg.vars[src0.idx].access.push(Access::read(opidx));
+    ir_mg.vars[src1.idx].access.push(Access::read(opidx));
     ir_mg.ops.push(Op::Add {
         dst: varidx,
         src0: src0.idx,

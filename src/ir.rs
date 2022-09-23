@@ -1,6 +1,31 @@
+pub enum AccessType {
+    Read,
+    Write,
+}
+
+pub struct Access {
+    idx: usize,
+    ty: AccessType,
+}
+
+impl Access {
+    pub fn read(idx: usize) -> Self {
+        Self {
+            idx,
+            ty: AccessType::Read,
+        }
+    }
+    pub fn write(idx: usize) -> Self {
+        Self {
+            idx,
+            ty: AccessType::Write,
+        }
+    }
+}
+
 pub struct Var {
     pub size: Option<usize>, // Size of the variable
-    pub access: Vec<usize>,  // Opperations accessing the variable
+    pub access: Vec<Access>, // Opperations accessing the variable
 }
 
 pub enum Op {
