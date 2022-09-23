@@ -66,8 +66,6 @@ pub fn eval(src: &VarRef) {
     let mut ir_mg = ir.lock().unwrap();
 
     let opidx = ir_mg.ops.len();
-
-    ir_mg.ops.push(Op::Eval { src: src.idx });
 }
 
 #[cfg(test)]

@@ -38,9 +38,6 @@ pub enum Op {
         rhs: usize,
         dst: usize,
     },
-    Eval {
-        src: usize,
-    },
     Linspace {
         dst: usize,
         start: f32,
