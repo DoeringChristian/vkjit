@@ -1,8 +1,6 @@
-pub enum Var {
-    Array {
-        num: Option<usize>, // Size of the variable
-        access: Vec<usize>, // Opperations accessing the variable
-    },
+pub struct Var {
+    pub size: Option<usize>, // Size of the variable
+    pub access: Vec<usize>,  // Opperations accessing the variable
 }
 
 pub enum Op {
