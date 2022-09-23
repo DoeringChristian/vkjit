@@ -12,7 +12,7 @@ impl std::ops::Add for VarRef {
     type Output = VarRef;
 
     fn add(self, rhs: Self) -> Self::Output {
-        todo!()
+        add(&self, &rhs)
     }
 }
 
@@ -36,8 +36,8 @@ pub fn linespace(start: f32, end: f32, num: usize, ir: &Arc<Mutex<Ir>>) -> VarRe
     }
 }
 
-pub fn add(src0: &VarRef, src1: &VarRef) -> VarRef {
-    let ir = src0.ir.clone();
+pub fn add(lhs: &VarRef, rhs: &VarRef) -> VarRef {
+    let ir = lhs.ir.clone();
     let mut ir_mg = ir.lock().unwrap();
 
     let varidx = ir_mg.vars.len();
@@ -47,16 +47,31 @@ pub fn add(src0: &VarRef, src1: &VarRef) -> VarRef {
         size: None,
         access: vec![Access::write(opidx)],
     });
-    ir_mg.vars[src0.idx].access.push(Access::read(opidx));
-    ir_mg.vars[src1.idx].access.push(Access::read(opidx));
+    ir_mg.vars[lhs.idx].access.push(Access::read(opidx));
+    ir_mg.vars[rhs.idx].access.push(Access::read(opidx));
     ir_mg.ops.push(Op::Add {
         dst: varidx,
-        src0: src0.idx,
-        src1: src1.idx,
+        lhs: lhs.idx,
+        rhs: rhs.idx,
     });
 
     VarRef {
         ir: ir.clone(),
         idx: varidx,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_add() {
+        let ir = Arc::new(Mutex::new(Ir::new()));
+
+        let a = linespace(0., 10., 10, &ir);
+        let b = linespace(0., 10., 10, &ir);
+        let c = a + b;
+
+        println!("{:?}", ir);
     }
 }

@@ -34,8 +34,8 @@ pub struct Var {
 #[derive(Debug)]
 pub enum Op {
     Add {
-        src0: usize,
-        src1: usize,
+        lhs: usize,
+        rhs: usize,
         dst: usize,
     },
     Eval {
