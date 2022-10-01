@@ -1,13 +1,13 @@
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum AccessType {
     Read,
     Write,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Access {
-    idx: usize,
-    ty: AccessType,
+    pub idx: usize,
+    pub ty: AccessType,
 }
 
 impl Access {
@@ -25,7 +25,7 @@ impl Access {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Var {
     pub size: Option<usize>, // Size of the variable
     pub access: Vec<Access>, // Opperations accessing the variable

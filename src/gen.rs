@@ -80,5 +80,21 @@ mod tests {
         let c = a + b;
 
         println!("{:#?}", ir);
+        assert_eq!(
+            ir.lock().unwrap().vars[0],
+            Var {
+                size: Some(10),
+                access: vec![
+                    Access {
+                        idx: 0,
+                        ty: AccessType::Write
+                    },
+                    Access {
+                        idx: 2,
+                        ty: AccessType::Read
+                    }
+                ]
+            }
+        );
     }
 }
