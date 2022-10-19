@@ -1,26 +1,9 @@
-use std::sync::Arc;
-
-mod buffer;
-mod device;
-mod gen;
-mod ir;
-mod kernel;
-
-use ash::vk;
-use buffer::{Buffer, BufferInfo};
-use device::Device;
+mod klir;
 
 fn main() {
-    let device = Arc::new(Device::create());
-    let buffer = Arc::new(
-        Buffer::create(
-            &device,
-            BufferInfo {
-                size: 100,
-                usage: vk::BufferUsageFlags::UNIFORM_BUFFER,
-                can_map: false,
-            },
-        )
-        .unwrap(),
-    );
+    let mut ir = klir::Ir::default();
+    let x = ir.one();
+    let y = ir.one();
+    let z = ir.add(x, y);
+    println!("{:?}", ir)
 }
