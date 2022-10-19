@@ -1,12 +1,12 @@
 //
 //Kernel Level Intermediate Representation
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum VarType {
     F32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Var {
     ty: Option<VarType>,
 }
@@ -16,98 +16,132 @@ pub struct VarId {
     id: usize,
 }
 
-#[derive(Debug)]
-struct Func {}
-
 #[derive(Debug, Clone, Copy)]
-struct FuncId {
+pub struct OpId {
     id: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Op {
-    Add { lhs: VarId, rhs: VarId, dst: VarId },
-    Sub { lhs: VarId, rhs: VarId, dst: VarId },
-    Zero { dst: VarId },
-    One { dst: VarId },
-    FuncStart { args: Vec<VarId>, func: FuncId },
-    FuncEnd { func: FuncId },
-    FuncExec { func: FuncId, args: Vec<VarId> },
+    Add {
+        lhs: VarId,
+        rhs: VarId,
+        dst: VarId,
+    },
+    Sub {
+        lhs: VarId,
+        rhs: VarId,
+        dst: VarId,
+    },
+    Zero {
+        dst: VarId,
+    },
+    One {
+        dst: VarId,
+    },
+    FuncStart {
+        args: Vec<VarId>,
+        ret: Option<VarId>,
+    },
+    FuncEnd {},
+    FuncExec {
+        op: OpId,
+        args: Vec<VarId>,
+        ret: Option<VarId>,
+    },
 }
 
 #[derive(Debug, Default)]
 pub struct Ir {
     vars: Vec<Var>,
     ops: Vec<Op>,
-    funcs: Vec<Func>,
 }
 
 impl Ir {
-    fn alloc_var(&mut self) -> VarId {
+    fn new_var(&mut self) -> VarId {
         let dst = VarId {
             id: self.vars.len(),
         };
         self.vars.push(Var { ty: None });
         dst
     }
-    fn new_func(&mut self) -> FuncId {
-        let dst = FuncId {
-            id: self.funcs.len(),
-        };
-        self.funcs.push(Func {});
-        dst
+    fn push_op(&mut self, op: Op) -> OpId {
+        let opid = OpId { id: self.ops.len() };
+        self.ops.push(op);
+        opid
+    }
+
+    fn var_mut(&mut self, var: VarId) -> &mut Var {
+        &mut self.vars[var.id]
+    }
+    fn op_mut(&mut self, op: OpId) -> &mut Op {
+        &mut self.ops[op.id]
+    }
+    fn get_op(&self, op: OpId) -> Op {
+        self.ops[op.id].clone()
     }
 
     pub fn zero(&mut self) -> VarId {
-        let dst = self.alloc_var();
+        let dst = self.new_var();
         self.ops.push(Op::Zero { dst });
         return dst;
     }
 
     pub fn one(&mut self) -> VarId {
-        let dst = self.alloc_var();
+        let dst = self.new_var();
         self.ops.push(Op::One { dst });
         return dst;
     }
 
     pub fn add(&mut self, lhs: VarId, rhs: VarId) -> VarId {
-        let dst = self.alloc_var();
+        let dst = self.new_var();
         self.ops.push(Op::Add { lhs, rhs, dst });
         dst
     }
 
     pub fn sub(&mut self, lhs: VarId, rhs: VarId) -> VarId {
-        let dst = self.alloc_var();
+        let dst = self.new_var();
         self.ops.push(Op::Sub { lhs, rhs, dst });
         dst
     }
 
-    pub fn func<F>(&mut self, num_args: usize, f: F) -> FuncId
+    pub fn func<F>(&mut self, num_args: usize, f: F) -> OpId
     where
-        F: Fn(Vec<VarId>),
+        F: Fn(&mut Ir, Vec<VarId>) -> Option<VarId>,
     {
-        let func = self.new_func();
         let args = (0..num_args)
             .into_iter()
-            .map(|_| self.alloc_var())
+            .map(|_| self.new_var())
             .collect::<Vec<_>>();
 
-        self.ops.push(Op::FuncStart {
+        let op = self.push_op(Op::FuncStart {
             args: args.clone(),
-            func,
+            ret: None,
         });
 
-        f(args);
+        let _ret = f(self, args);
 
-        self.ops.push(Op::FuncEnd { func });
+        match self.op_mut(op) {
+            Op::FuncStart { ref mut ret, .. } => *ret = _ret,
+            _ => unreachable!(),
+        };
+        self.ops.push(Op::FuncEnd {});
 
-        func
+        op
     }
 
-    pub fn exec(&mut self, func: FuncId, args: &[VarId]) {
+    pub fn exec(&mut self, op: OpId, args: &[VarId]) -> Option<VarId> {
+        let ret = match self.get_op(op) {
+            Op::FuncStart { mut args, mut ret } => ret.and_then(|_| Some(self.new_var())),
+            _ => unreachable!(),
+        };
+
         self.ops.push(Op::FuncExec {
-            func,
+            op,
             args: args.to_vec(),
+            ret,
         });
+
+        ret
     }
 }
