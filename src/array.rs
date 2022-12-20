@@ -9,15 +9,18 @@ struct Metadata {
 }
 
 #[derive(Debug)]
-pub struct Array<T: AsStd140> {
-    _ty: PhantomData<T>,
+pub struct Array {
     pub buf: Arc<Buffer>,
     device: Arc<Device>,
     count: usize,
 }
 
-impl<T: AsStd140> Array<T> {
-    pub fn create(device: &Arc<Device>, data: &[T], usage: vk::BufferUsageFlags) -> Self {
+impl Array {
+    pub fn create<T: AsStd140>(
+        device: &Arc<Device>,
+        data: &[T],
+        usage: vk::BufferUsageFlags,
+    ) -> Self {
         let count = data.len();
         let size = Metadata::std140_size_static() + T::std140_size_static() * count;
         let buf = Arc::new({
@@ -36,15 +39,6 @@ impl<T: AsStd140> Array<T> {
             buf,
             count: data.len(),
             device: device.clone(),
-            _ty: PhantomData,
         }
-    }
-    #[inline]
-    pub fn count(&self) -> usize {
-        self.count
-    }
-    #[inline]
-    pub fn size(&self) -> usize {
-        Metadata::std140_size_static() + T::std140_size_static() * self.count
     }
 }

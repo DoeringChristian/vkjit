@@ -1367,6 +1367,7 @@ dependencies = [
 name = "vkjit03"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "crevice",
  "glam",
  "rspirv",

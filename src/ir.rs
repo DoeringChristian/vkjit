@@ -17,7 +17,7 @@ enum Const {
 
 #[derive(Debug, Clone, Copy)]
 enum Op {
-    Buffer,
+    Array,
     Bop(Bop, usize, usize),
     Arange(usize),
     Const(Const),
@@ -32,6 +32,20 @@ pub enum VarType {
     Float32,
 }
 impl VarType {
+    #[allow(unused)]
+    pub fn from_rs<T: 'static>() -> Self {
+        let ty_f32 = std::any::TypeId::of::<f32>();
+        let ty_u32 = std::any::TypeId::of::<u32>();
+        let ty_i32 = std::any::TypeId::of::<i32>();
+        let ty_bool = std::any::TypeId::of::<bool>();
+        match std::any::TypeId::of::<T>() {
+            ty_f32 => Self::Float32,
+            ty_u32 => Self::UInt32,
+            ty_i32 => Self::Int32,
+            ty_bool => Self::Bool,
+            _ => unimplemented!(),
+        }
+    }
     fn to_spirv(&self, b: &mut rspirv::dr::Builder) -> u32 {
         match self {
             VarType::Void => b.type_void(),
@@ -108,6 +122,8 @@ pub struct Compiler {
     pub b: rspirv::dr::Builder,
     pub vars: HashMap<usize, u32>,
     pub num: Option<usize>,
+
+    // Variables used by many kernels
     pub idx: Option<u32>,
     pub global_invocation_id: Option<u32>,
 }
@@ -120,6 +136,13 @@ impl Compiler {
             num: None,
             idx: None,
             global_invocation_id: None,
+        }
+    }
+    fn set_num(&mut self, num: usize) {
+        if let Some(num_) = self.num {
+            assert!(num_ == num)
+        } else {
+            self.num = Some(num);
         }
     }
     fn record_var(&mut self, id: usize, ir: &Ir) -> u32 {
@@ -163,11 +186,7 @@ impl Compiler {
                 ret
             }
             Op::Arange(num) => {
-                if let Some(num_) = self.num {
-                    assert!(num_ == num)
-                } else {
-                    self.num = Some(num);
-                }
+                self.set_num(num);
                 let ret = match var.ty {
                     VarType::UInt32 => self.idx.unwrap(),
                     VarType::Int32 => {
@@ -182,6 +201,9 @@ impl Compiler {
                 };
                 self.vars.insert(id, ret);
                 ret
+            }
+            Op::Array => {
+                todo!()
             }
             _ => unimplemented!(),
         }
