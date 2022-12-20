@@ -107,6 +107,9 @@ impl Ir {
 pub struct Compiler {
     pub b: rspirv::dr::Builder,
     pub vars: HashMap<usize, u32>,
+    pub num: Option<usize>,
+    pub idx: Option<u32>,
+    pub global_invocation_id: Option<u32>,
 }
 
 impl Compiler {
@@ -114,6 +117,9 @@ impl Compiler {
         Self {
             b: rspirv::dr::Builder::new(),
             vars: HashMap::default(),
+            num: None,
+            idx: None,
+            global_invocation_id: None,
         }
     }
     fn record_var(&mut self, id: usize, ir: &Ir) -> u32 {
@@ -157,42 +163,15 @@ impl Compiler {
                 ret
             }
             Op::Arange(num) => {
-                let uint = self.b.type_int(32, 0);
-                let v3uint = self.b.type_vector(uint, 3);
-                let ptr_input_v3uint =
-                    self.b
-                        .type_pointer(None, rspirv::spirv::StorageClass::Input, v3uint);
-                let global_invocation_id = self.b.variable(
-                    ptr_input_v3uint,
-                    None,
-                    rspirv::spirv::StorageClass::Input,
-                    None,
-                );
-                self.b.decorate(
-                    global_invocation_id,
-                    spirv::Decoration::BuiltIn,
-                    vec![rspirv::dr::Operand::BuiltIn(
-                        spirv::BuiltIn::GlobalInvocationId,
-                    )],
-                );
-                // Load x component of GlobalInvocationId
-                let uint_0 = self.b.constant_u32(uint, 0);
-                let uint = self.b.type_int(32, 0);
-                let ptr_input_uint = self.b.type_pointer(None, spirv::StorageClass::Input, uint);
-                let ptr = self
-                    .b
-                    .access_chain(ptr_input_uint, None, global_invocation_id, vec![uint_0])
-                    .unwrap();
-                let idx = self.b.load(uint, None, ptr, None, None).unwrap();
                 let ret = match var.ty {
-                    VarType::UInt32 => idx,
+                    VarType::UInt32 => self.idx.unwrap(),
                     VarType::Int32 => {
                         let ty = var.ty.to_spirv(&mut self.b);
-                        self.b.bitcast(ty, None, idx).unwrap()
+                        self.b.bitcast(ty, None, self.idx.unwrap()).unwrap()
                     }
                     VarType::Float32 => {
                         let ty = var.ty.to_spirv(&mut self.b);
-                        self.b.convert_u_to_f(ty, None, idx).unwrap()
+                        self.b.convert_u_to_f(ty, None, self.idx.unwrap()).unwrap()
                     }
                     _ => unimplemented!(),
                 };
@@ -202,7 +181,39 @@ impl Compiler {
             _ => unimplemented!(),
         }
     }
+    pub fn record_idx(&mut self, ir: &Ir) {
+        let uint = self.b.type_int(32, 0);
+        let v3uint = self.b.type_vector(uint, 3);
+        let ptr_input_v3uint =
+            self.b
+                .type_pointer(None, rspirv::spirv::StorageClass::Input, v3uint);
+        let global_invocation_id = self.b.variable(
+            ptr_input_v3uint,
+            None,
+            rspirv::spirv::StorageClass::Input,
+            None,
+        );
+        self.b.decorate(
+            global_invocation_id,
+            spirv::Decoration::BuiltIn,
+            vec![rspirv::dr::Operand::BuiltIn(
+                spirv::BuiltIn::GlobalInvocationId,
+            )],
+        );
+        // Load x component of GlobalInvocationId
+        let uint_0 = self.b.constant_u32(uint, 0);
+        let uint = self.b.type_int(32, 0);
+        let ptr_input_uint = self.b.type_pointer(None, spirv::StorageClass::Input, uint);
+        let ptr = self
+            .b
+            .access_chain(ptr_input_uint, None, global_invocation_id, vec![uint_0])
+            .unwrap();
+        let idx = self.b.load(uint, None, ptr, None, None).unwrap();
+        self.idx = Some(idx);
+        self.global_invocation_id = Some(global_invocation_id);
+    }
     pub fn compile(&mut self, ir: &Ir, schedule: Vec<usize>) {
+        self.record_idx(ir);
         // Setup kernel with main function
         self.b.set_version(1, 3);
         self.b.memory_model(
