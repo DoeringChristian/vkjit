@@ -1,5 +1,5 @@
 [package]
-name = "vkjit"
+name = "vkjit03"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,8 +7,6 @@ edition = "2021"
 
 [dependencies]
 rspirv = "*"
-spirv = "*"
-ash = {version = "0.37", features = [ "linked" ]}
-raw-window-handle = "0.4"
-vk-sync = "0.1.6"
-gpu-allocator = "0.18"
+screen-13 = "*"
+glam = "0.22"
+crevice = {version = "*", features = ["glam"]}
