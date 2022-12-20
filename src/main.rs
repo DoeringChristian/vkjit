@@ -37,6 +37,7 @@ fn main() {
     let y = i.const_u32(2);
     let z = i.add(x, y);
 
-    let m = i.compile(vec![z]);
-    println!("{}", m.disassemble());
+    let mut c = ir::Compiler::new();
+    c.compile(&i, vec![z]);
+    println!("{}", c.b.module().disassemble());
 }
