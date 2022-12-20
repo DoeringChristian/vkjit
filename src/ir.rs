@@ -19,7 +19,7 @@ enum Const {
 enum Op {
     Buffer,
     Bop(Bop, usize, usize),
-    Arange(u32),
+    Arange(usize),
     Const(Const),
 }
 
@@ -87,7 +87,7 @@ impl Ir {
         let ty = lhs_ty.max(rhs_ty);
         self.new_var(Op::Bop(Bop::Add, lhs, rhs), ty)
     }
-    pub fn arange(&mut self, ty: VarType, num: u32) -> usize {
+    pub fn arange(&mut self, ty: VarType, num: usize) -> usize {
         self.new_var(Op::Arange(num), ty)
     }
     pub fn const_f32(&mut self, val: f32) -> usize {
@@ -163,6 +163,11 @@ impl Compiler {
                 ret
             }
             Op::Arange(num) => {
+                if let Some(num_) = self.num {
+                    assert!(num_ == num)
+                } else {
+                    self.num = Some(num);
+                }
                 let ret = match var.ty {
                     VarType::UInt32 => self.idx.unwrap(),
                     VarType::Int32 => {
