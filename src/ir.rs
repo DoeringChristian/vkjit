@@ -213,7 +213,6 @@ impl Compiler {
         self.global_invocation_id = Some(global_invocation_id);
     }
     pub fn compile(&mut self, ir: &Ir, schedule: Vec<usize>) {
-        self.record_idx(ir);
         // Setup kernel with main function
         self.b.set_version(1, 3);
         self.b.memory_model(
@@ -233,6 +232,8 @@ impl Compiler {
             )
             .unwrap();
         self.b.begin_block(None).unwrap();
+
+        self.record_idx(ir);
 
         for var in schedule {
             self.record_var(var, ir);
