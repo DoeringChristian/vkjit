@@ -1,4 +1,5 @@
 use screen_13::prelude::*;
+use spirq::ReflectConfig;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -40,7 +41,21 @@ fn main() {
     let mut graph = RenderGraph::new();
     let mut pool = LazyPool::new(&sc13.device);
 
-    k.execute(&i, &mut graph);
+    let module = k.b.module();
+    println!("{}", module.disassemble());
+
+    let spv = module.assemble();
+
+    let entry_points = ReflectConfig::new()
+        .spv(spv)
+        .ref_all_rscs(true)
+        .combine_img_samplers(true)
+        .gen_unique_names(true)
+        .reflect()
+        .unwrap();
+    println!("{:#?}", entry_points);
+
+    //k.execute(&i, &mut graph);
 
     graph.resolve().submit(&mut pool, 0).unwrap();
 }

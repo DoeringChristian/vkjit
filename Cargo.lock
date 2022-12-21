@@ -1465,6 +1465,7 @@ dependencies = [
  "pretty_env_logger",
  "rspirv",
  "screen-13",
+ "spirq",
 ]
 
 [[package]]
