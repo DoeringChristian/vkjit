@@ -46,5 +46,8 @@ fn main() {
 
     let mut k = ir::Kernel::new();
     let res = k.compile(&mut i, vec![z]);
+    println!("{:#?}", i);
+    println!("{:#?}", res);
+    println!("{:#?}", k);
     println!("{}", k.b.module().disassemble());
 }

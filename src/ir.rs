@@ -1,6 +1,7 @@
 use rspirv::spirv;
 use screen_13::prelude::vk;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::sync::Arc;
 
 use crevice::std140::{self, AsStd140};
@@ -167,6 +168,17 @@ pub struct Kernel {
     // Variables used by many kernels
     pub idx: Option<u32>,
     pub global_invocation_id: Option<u32>,
+}
+impl Debug for Kernel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Kernel")
+            .field("vars", &self.vars)
+            .field("num", &self.num)
+            .field("bindings", &self.bindings)
+            .field("idx", &self.idx)
+            .field("global_invocation_id", &self.global_invocation_id)
+            .finish()
+    }
 }
 
 impl Kernel {
