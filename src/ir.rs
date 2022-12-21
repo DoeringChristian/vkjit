@@ -40,6 +40,16 @@ pub enum VarType {
     Float32,
 }
 impl VarType {
+    pub fn stride(&self) -> usize {
+        match self {
+            VarType::Void => 0,
+            VarType::Bool => bool::std140_size_static(),
+            VarType::UInt32 => u32::std140_size_static(),
+            VarType::Int32 => i32::std140_size_static(),
+            VarType::Float32 => f32::std140_size_static(),
+            _ => unimplemented!(),
+        }
+    }
     pub fn size(&self) -> usize {
         match self {
             VarType::Void => 0,
@@ -182,6 +192,7 @@ pub struct Kernel {
 
     pub bindings: HashMap<usize, Binding>,
     pub arrays: HashMap<usize, u32>,
+    pub array_structs: HashMap<VarType, u32>,
 
     // Variables used by many kernels
     pub idx: Option<u32>,
@@ -206,6 +217,7 @@ impl Kernel {
             vars: HashMap::default(),
             bindings: HashMap::default(),
             arrays: HashMap::default(),
+            array_structs: HashMap::default(),
             num: None,
             idx: None,
             global_invocation_id: None,
@@ -224,6 +236,36 @@ impl Kernel {
             self.bindings[&id]
         }
     }
+    fn record_array_struct(&mut self, ty: &VarType) -> u32 {
+        if self.array_structs.contains_key(ty) {
+            return self.array_structs[ty];
+        }
+        let spv_ty = ty.to_spirv(&mut self.b);
+
+        let ty_rta = self.b.type_runtime_array(spv_ty);
+        let ty_struct = self.b.type_struct(vec![ty_rta]);
+        let ty_struct_ptr = self
+            .b
+            .type_pointer(None, spirv::StorageClass::Uniform, ty_struct);
+
+        let stride = ty.stride();
+        self.b.decorate(
+            ty_rta,
+            spirv::Decoration::ArrayStride,
+            vec![rspirv::dr::Operand::LiteralInt32(stride as u32)],
+        );
+
+        self.b
+            .decorate(ty_struct, spirv::Decoration::BufferBlock, vec![]);
+        self.b.member_decorate(
+            ty_struct,
+            0,
+            spirv::Decoration::Offset,
+            vec![rspirv::dr::Operand::LiteralInt32(0)],
+        );
+        self.array_structs.insert(ty.clone(), ty_struct_ptr);
+        ty_struct_ptr
+    }
     fn record_binding(&mut self, id: usize, ir: &Ir) -> u32 {
         if self.arrays.contains_key(&id) {
             return self.arrays[&id];
@@ -234,16 +276,7 @@ impl Kernel {
         self.set_num(var.array.as_ref().unwrap().count());
         // https://shader-playground.timjones.io/3af32078f879d8599902e46b919dbfe3
         let binding = self.binding(id, Access::Read);
-        let ty = var.ty.to_spirv(&mut self.b);
-
-        let ty_rta = self.b.type_runtime_array(ty);
-        let ty_struct = self.b.type_struct(vec![ty_rta]);
-        let ty_struct_ptr = self
-            .b
-            .type_pointer(None, spirv::StorageClass::Uniform, ty_struct);
-
-        self.b
-            .decorate(ty_struct, spirv::Decoration::BufferBlock, vec![]);
+        let ty_struct_ptr = self.record_array_struct(&var.ty);
 
         let st = self
             .b
@@ -459,7 +492,8 @@ impl Kernel {
             .begin_function(
                 void,
                 None,
-                rspirv::spirv::FunctionControl::DONT_INLINE | rspirv::spirv::FunctionControl::CONST,
+                //rspirv::spirv::FunctionControl::DONT_INLINE | rspirv::spirv::FunctionControl::CONST,
+                rspirv::spirv::FunctionControl::NONE,
                 voidf,
             )
             .unwrap();
@@ -506,7 +540,7 @@ impl Kernel {
             rspirv::spirv::ExecutionModel::GLCompute,
             main,
             "main",
-            vec![],
+            vec![self.global_invocation_id.unwrap()],
         );
 
         result

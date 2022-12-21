@@ -24,7 +24,7 @@ fn main() {
     //let device = Arc::new(Device::new(cfg).unwrap());
 
     let mut i = ir::Ir::new(&sc13.device);
-    let x = i.arange(ir::VarType::UInt32, 10);
+    let x = i.arange(ir::VarType::Float32, 10);
     let y = i.array_f32(&[1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]);
     let z = i.add(x, y);
 
