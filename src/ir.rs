@@ -239,8 +239,8 @@ impl Kernel {
     fn binding(&mut self, id: usize, access: Access) -> Binding {
         if !self.bindings.contains_key(&id) {
             let binding = Binding {
-                set: 0,
-                binding: self.bindings.len() as u32,
+                set: self.bindings.len() as u32,
+                binding: 0,
                 access,
             };
             self.bindings.insert(id, binding);
@@ -299,12 +299,12 @@ impl Kernel {
         self.b.decorate(
             st,
             spirv::Decoration::Binding,
-            vec![rspirv::dr::Operand::LiteralInt32(binding.set)],
+            vec![rspirv::dr::Operand::LiteralInt32(binding.binding)],
         );
         self.b.decorate(
             st,
             spirv::Decoration::DescriptorSet,
-            vec![rspirv::dr::Operand::LiteralInt32(binding.binding)],
+            vec![rspirv::dr::Operand::LiteralInt32(binding.set)],
         );
         self.arrays.insert(id, st);
         st
@@ -583,10 +583,10 @@ impl Kernel {
         for (id, binding) in self.bindings.iter() {
             match binding.access {
                 Access::Read => {
-                    pass = pass.read_descriptor((binding.binding, binding.set), nodes[&id]);
+                    pass = pass.read_descriptor((binding.set, binding.binding), nodes[&id]);
                 }
                 Access::Write => {
-                    pass = pass.write_descriptor((binding.binding, binding.set), nodes[&id]);
+                    pass = pass.write_descriptor((binding.set, binding.binding), nodes[&id]);
                 }
             }
         }
