@@ -1,5 +1,6 @@
+use rspirv::binary::{Assemble, Disassemble};
 use rspirv::spirv;
-use screen_13::prelude::vk;
+use screen_13::prelude::{vk, ComputePipeline, RenderGraph};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -112,6 +113,9 @@ impl Ir {
             vars: Vec::default(),
         }
     }
+    pub fn array(&self, id: usize) -> &Arc<array::Array> {
+        self.vars[id].array.as_ref().unwrap()
+    }
     fn new_var(&mut self, op: Op, ty: VarType) -> usize {
         self.push_var(Var {
             op,
@@ -158,12 +162,25 @@ impl Ir {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Access {
+    Read,
+    Write,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Binding {
+    pub binding: u32,
+    pub set: u32,
+    pub access: Access,
+}
+
 pub struct Kernel {
     pub b: rspirv::dr::Builder,
     pub vars: HashMap<usize, u32>,
     pub num: Option<usize>,
 
-    pub bindings: HashMap<usize, (u32, u32)>,
+    pub bindings: HashMap<usize, Binding>,
 
     // Variables used by many kernels
     pub idx: Option<u32>,
@@ -192,9 +209,13 @@ impl Kernel {
             global_invocation_id: None,
         }
     }
-    fn binding(&mut self, var: usize) -> (u32, u32) {
+    fn binding(&mut self, var: usize, access: Access) -> Binding {
         if !self.bindings.contains_key(&var) {
-            let binding = (0, self.bindings.len() as u32);
+            let binding = Binding {
+                binding: 0,
+                set: self.bindings.len() as u32,
+                access,
+            };
             self.bindings.insert(var, binding);
             binding
         } else {
@@ -205,7 +226,7 @@ impl Kernel {
     /// Return a pointer to the binding at an index
     /// Note that idx is a spirv variable
     ///
-    fn access_binding_at(&mut self, ty: u32, binding: (u32, u32), idx: u32) -> u32 {
+    fn access_binding_at(&mut self, ty: u32, binding: Binding, idx: u32) -> u32 {
         let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
         let arr = self
             .b
@@ -213,18 +234,18 @@ impl Kernel {
         self.b.decorate(
             arr,
             spirv::Decoration::Binding,
-            vec![rspirv::dr::Operand::LiteralInt32(binding.1)],
+            vec![rspirv::dr::Operand::LiteralInt32(binding.binding)],
         );
         self.b.decorate(
             arr,
             spirv::Decoration::DescriptorSet,
-            vec![rspirv::dr::Operand::LiteralInt32(binding.1)],
+            vec![rspirv::dr::Operand::LiteralInt32(binding.set)],
         );
         let ptr = self.b.access_chain(ptr_ty, None, arr, vec![idx]).unwrap();
         ptr
     }
 
-    fn access_binding(&mut self, ty: u32, binding: (u32, u32)) -> u32 {
+    fn access_binding(&mut self, ty: u32, binding: Binding) -> u32 {
         self.access_binding_at(ty, binding, self.idx.unwrap())
     }
     fn set_num(&mut self, num: usize) {
@@ -297,7 +318,7 @@ impl Kernel {
             Op::Binding => {
                 self.set_num(var.array.as_ref().unwrap().count());
                 // https://shader-playground.timjones.io/3af32078f879d8599902e46b919dbfe3
-                let binding = self.binding(id);
+                let binding = self.binding(id, Access::Read);
                 let ty = var.ty.to_spirv(&mut self.b);
 
                 let ptr = self.access_binding(ty, binding);
@@ -384,7 +405,7 @@ impl Kernel {
                 });
 
                 // Bind variable and write result
-                let binding = self.binding(var);
+                let binding = self.binding(var, Access::Write);
                 let ty = ty.to_spirv(&mut self.b);
                 let ptr = self.access_binding(ty, binding);
                 self.b.store(ptr, *id_spv, None, None).unwrap();
@@ -403,5 +424,38 @@ impl Kernel {
         );
 
         result
+    }
+    pub fn execute(self, ir: &Ir, graph: &mut RenderGraph) {
+        let module = self.b.module();
+        println!("{}", module.disassemble());
+
+        let spv = module.assemble();
+        let pipeline = Arc::new(ComputePipeline::create(&ir.device, spv).unwrap());
+
+        let nodes = self
+            .bindings
+            .iter()
+            .map(|(id, _)| {
+                let arr = ir.array(*id).clone();
+                let node = graph.bind_node(&arr.buf);
+                (*id, node)
+            })
+            .collect::<HashMap<_, _>>();
+
+        let mut pass = graph.begin_pass("Eval kernel").bind_pipeline(&pipeline);
+        for (id, binding) in self.bindings.iter() {
+            match binding.access {
+                Access::Read => {
+                    pass = pass.read_descriptor((binding.binding, binding.set), nodes[&id]);
+                }
+                Access::Write => {
+                    pass = pass.write_descriptor((binding.binding, binding.set), nodes[&id]);
+                }
+            }
+        }
+        let num = self.num.unwrap();
+        pass.record_compute(move |compute, _| {
+            compute.dispatch(num as u32, 1, 1);
+        });
     }
 }

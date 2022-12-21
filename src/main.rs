@@ -2,9 +2,10 @@ use screen_13::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use rspirv::binary::Disassemble;
+use rspirv::binary::{Assemble, Disassemble};
 
 use crate::array::Array;
+use crate::ir::Access;
 
 #[allow(dead_code)]
 mod array;
@@ -46,8 +47,14 @@ fn main() {
 
     let mut k = ir::Kernel::new();
     let res = k.compile(&mut i, vec![z]);
+
     println!("{:#?}", i);
     println!("{:#?}", res);
     println!("{:#?}", k);
-    println!("{}", k.b.module().disassemble());
+    //let module = k.b.module();
+    //println!("{}", module.disassemble());
+
+    let mut graph = RenderGraph::new();
+
+    k.execute(&i, &mut graph);
 }
