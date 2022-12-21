@@ -28,12 +28,12 @@ fn main() {
     let mut i = ir::Ir::new(&sc13.device);
 
     // Record kernel
-    let x = i.arange(ir::VarType::Float32, 10);
+    //let x = i.arange(ir::VarType::Float32, 10);
     let y = i.array_f32(&[1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]);
-    let z = i.add(x, y);
+    //let z = i.add(x, y);
 
     let mut k = ir::Kernel::new();
-    let res = k.compile(&mut i, vec![z]);
+    let res = k.compile(&mut i, vec![y]);
 
     println!("{:#?}", i);
     println!("{:#?}", res);
@@ -46,6 +46,7 @@ fn main() {
 
     graph.resolve().submit(&mut pool, 0).unwrap();
 
+    println!("res={:#?}", res[0]);
     let var = i.var(res[0]);
     let res = Buffer::mapped_slice(&var.array.as_ref().unwrap().buf);
     let res: &[f32] = cast_slice(res);

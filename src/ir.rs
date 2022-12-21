@@ -581,6 +581,7 @@ impl Kernel {
 
         let mut pass = graph.begin_pass("Eval kernel").bind_pipeline(&pipeline);
         for (id, binding) in self.bindings.iter() {
+            println!("id={id}");
             match binding.access {
                 Access::Read => {
                     pass = pass.read_descriptor((binding.set, binding.binding), nodes[&id]);
