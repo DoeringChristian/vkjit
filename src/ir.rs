@@ -238,11 +238,16 @@ impl Kernel {
 
         let ty_rta = self.b.type_runtime_array(ty);
         let ty_struct = self.b.type_struct(vec![ty_rta]);
-        let ty_ptr = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
+        let ty_struct_ptr = self
+            .b
+            .type_pointer(None, spirv::StorageClass::Uniform, ty_struct);
+
+        self.b
+            .decorate(ty_struct, spirv::Decoration::BufferBlock, vec![]);
 
         let st = self
             .b
-            .variable(ty_struct, None, spirv::StorageClass::Uniform, None);
+            .variable(ty_struct_ptr, None, spirv::StorageClass::Uniform, None);
         self.b.decorate(
             st,
             spirv::Decoration::Binding,
@@ -264,11 +269,13 @@ impl Kernel {
         println!("{}", id);
         let var = &ir.vars[id];
         let ty = var.ty.to_spirv(&mut self.b);
+        let ty_int = self.b.type_int(32, 1);
+        let int_0 = self.b.constant_u32(ty_int, 0);
 
         let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
         let ptr = self
             .b
-            .access_chain(ptr_ty, None, self.arrays[&id], vec![0, idx])
+            .access_chain(ptr_ty, None, self.arrays[&id], vec![int_0, idx])
             .unwrap();
         ptr
     }
