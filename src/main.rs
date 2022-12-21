@@ -12,32 +12,14 @@ mod array;
 #[allow(dead_code)]
 mod ir;
 
-fn build() -> Result<(), rspirv::dr::Error> {
-    let mut b = rspirv::dr::Builder::new();
-
-    b.set_version(1, 3);
-    b.memory_model(
-        rspirv::spirv::AddressingModel::Logical,
-        rspirv::spirv::MemoryModel::Simple,
-    );
-
-    let void = b.type_void();
-    let voidf = b.type_function(void, vec![void]);
-    let x = b.begin_function(
-        void,
-        None,
-        (rspirv::spirv::FunctionControl::DONT_INLINE | rspirv::spirv::FunctionControl::CONST),
-        voidf,
-    );
-    b.begin_block(None)?;
-    b.ret()?;
-    b.end_function()?;
-    println!("{}", b.module().disassemble());
-    Ok(())
-}
-
 fn main() {
-    let cfg = DriverConfig::new().build();
+    pretty_env_logger::init();
+
+    let cfg = DriverConfig::new()
+        .debug(true)
+        .presentation(false)
+        .sync_display(false)
+        .build();
     let device = Arc::new(Device::new(cfg).unwrap());
 
     let mut i = ir::Ir::new(&device);
@@ -55,6 +37,9 @@ fn main() {
     //println!("{}", module.disassemble());
 
     let mut graph = RenderGraph::new();
+    let mut pool = LazyPool::new(&device);
 
     k.execute(&i, &mut graph);
+
+    graph.resolve().submit(&mut pool, 0).unwrap();
 }
