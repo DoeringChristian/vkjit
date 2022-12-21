@@ -41,4 +41,8 @@ impl Array {
             device: device.clone(),
         }
     }
+    #[inline]
+    pub fn count(&self) -> usize {
+        self.count
+    }
 }

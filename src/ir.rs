@@ -145,7 +145,7 @@ impl Ir {
     }
 }
 
-pub struct Compiler {
+pub struct Kernel {
     pub b: rspirv::dr::Builder,
     pub vars: HashMap<usize, u32>,
     pub num: Option<usize>,
@@ -157,7 +157,7 @@ pub struct Compiler {
     pub global_invocation_id: Option<u32>,
 }
 
-impl Compiler {
+impl Kernel {
     pub fn new() -> Self {
         Self {
             b: rspirv::dr::Builder::new(),
@@ -242,6 +242,7 @@ impl Compiler {
                 ret
             }
             Op::Binding => {
+                self.set_num(var.array.as_ref().unwrap().count());
                 // https://shader-playground.timjones.io/3af32078f879d8599902e46b919dbfe3
                 let binding = self.bind(id);
 

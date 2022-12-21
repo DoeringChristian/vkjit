@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use rspirv::binary::Disassemble;
 
+#[allow(dead_code)]
 mod array;
 #[allow(dead_code)]
 mod ir;
@@ -38,10 +39,10 @@ fn main() {
 
     let mut i = ir::Ir::new(&device);
     let x = i.arange(ir::VarType::UInt32, 10);
-    let y = i.const_u32(2);
+    let y = i.array_f32(&[1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]);
     let z = i.add(x, y);
 
-    let mut c = ir::Compiler::new();
-    c.compile(&i, vec![z]);
-    println!("{}", c.b.module().disassemble());
+    let mut k = ir::Kernel::new();
+    k.compile(&i, vec![z]);
+    println!("{}", k.b.module().disassemble());
 }
