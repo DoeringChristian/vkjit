@@ -33,7 +33,7 @@ fn build() -> Result<(), rspirv::dr::Error> {
 }
 
 fn main() {
-    let cfg = DriverConfig::new().debug(true).build();
+    let cfg = DriverConfig::new().build();
     let device = Arc::new(Device::new(cfg).unwrap());
 
     let mut i = ir::Ir::new(&device);
