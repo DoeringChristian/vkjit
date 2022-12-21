@@ -224,7 +224,7 @@ impl Kernel {
             self.bindings[&id]
         }
     }
-    fn record_array(&mut self, id: usize, ir: &Ir) -> u32 {
+    fn record_binding(&mut self, id: usize, ir: &Ir) -> u32 {
         if self.arrays.contains_key(&id) {
             return self.arrays[&id];
         }
@@ -236,34 +236,39 @@ impl Kernel {
         let binding = self.binding(id, Access::Read);
         let ty = var.ty.to_spirv(&mut self.b);
 
-        let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
-        let arr = self
+        let ty_rta = self.b.type_runtime_array(ty);
+        let ty_struct = self.b.type_struct(vec![ty_rta]);
+        let ty_ptr = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
+
+        let st = self
             .b
-            .variable(ptr_ty, None, spirv::StorageClass::Uniform, None);
+            .variable(ty_struct, None, spirv::StorageClass::Uniform, None);
         self.b.decorate(
-            arr,
+            st,
             spirv::Decoration::Binding,
             vec![rspirv::dr::Operand::LiteralInt32(binding.binding)],
         );
         self.b.decorate(
-            arr,
+            st,
             spirv::Decoration::DescriptorSet,
             vec![rspirv::dr::Operand::LiteralInt32(binding.set)],
         );
-        arr
+        self.arrays.insert(id, st);
+        st
     }
     ///
     /// Return a pointer to the binding at an index
     /// Note that idx is a spirv variable
     ///
     fn access_binding_at(&mut self, id: usize, ir: &Ir, idx: u32) -> u32 {
+        println!("{}", id);
         let var = &ir.vars[id];
         let ty = var.ty.to_spirv(&mut self.b);
 
         let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
         let ptr = self
             .b
-            .access_chain(ptr_ty, None, self.arrays[&id], vec![idx])
+            .access_chain(ptr_ty, None, self.arrays[&id], vec![0, idx])
             .unwrap();
         ptr
     }
@@ -282,6 +287,22 @@ impl Kernel {
             self.num = Some(num);
         }
     }
+    fn record_kernel_size(&mut self, id: usize, ir: &Ir) {
+        let var = &ir.vars[id];
+        match var.op {
+            Op::Bop(_, lhs, rhs) => {
+                self.record_kernel_size(lhs, ir);
+                self.record_kernel_size(rhs, ir);
+            }
+            Op::Binding => {
+                self.set_num(var.array.as_ref().unwrap().count());
+            }
+            Op::Arange(num) => {
+                self.set_num(num);
+            }
+            _ => {}
+        };
+    }
     fn record_bindings(&mut self, id: usize, ir: &Ir) {
         if self.arrays.contains_key(&id) {
             return;
@@ -289,11 +310,11 @@ impl Kernel {
         let var = &ir.vars[id];
         match var.op {
             Op::Bop(_, lhs, rhs) => {
-                self.record_array(lhs, ir);
-                self.record_array(rhs, ir);
+                self.record_bindings(lhs, ir);
+                self.record_bindings(rhs, ir);
             }
             Op::Binding => {
-                self.record_array(id, ir);
+                self.record_binding(id, ir);
             }
             _ => {}
         };
@@ -365,6 +386,11 @@ impl Kernel {
         }
     }
     pub fn compile(&mut self, ir: &mut Ir, schedule: Vec<usize>) -> Vec<usize> {
+        // Determine kernel size
+        for id in schedule.iter() {
+            self.record_kernel_size(*id, ir);
+        }
+
         // Setup kernel with main function
         self.b.set_version(1, 3);
         self.b.capability(spirv::Capability::Shader);
@@ -393,7 +419,7 @@ impl Kernel {
             )],
         );
 
-        // Record binding arrays before function
+        // Record bindings before function
         let schedule = schedule
             .iter()
             .map(|id1| {
@@ -414,6 +440,9 @@ impl Kernel {
                 (*id1, id2)
             })
             .collect::<Vec<_>>();
+
+        println!("{:#?}", self.bindings);
+        println!("{:#?}", self.arrays);
 
         // Setup main function
         let void = self.b.type_void();
