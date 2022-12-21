@@ -115,9 +115,9 @@ impl From<VarType> for rspirv::sr::Type {
 }
 
 #[derive(Debug, Clone)]
-struct Var {
+pub struct Var {
     op: Op,
-    array: Option<Arc<array::Array>>,
+    pub array: Option<Arc<array::Array>>,
     ty: VarType,
 }
 
@@ -147,6 +147,9 @@ impl Ir {
         let id = self.vars.len();
         self.vars.push(var);
         id
+    }
+    pub fn var(&self, id: usize) -> &Var {
+        &self.vars[id]
     }
     pub fn add(&mut self, lhs: usize, rhs: usize) -> usize {
         let lhs_ty = &self.vars[lhs].ty;

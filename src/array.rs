@@ -20,7 +20,7 @@ impl Array {
         usage: vk::BufferUsageFlags,
     ) -> Self {
         let size = ty.size() * count;
-        let mut buf = Buffer::create(device, BufferInfo::new(size as u64, usage)).unwrap();
+        let mut buf = Buffer::create(device, BufferInfo::new_mappable(size as u64, usage)).unwrap();
         Self {
             buf: Arc::new(buf),
             count,
