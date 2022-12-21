@@ -20,9 +20,10 @@ fn main() {
         .presentation(false)
         .sync_display(false)
         .build();
-    let device = Arc::new(Device::new(cfg).unwrap());
+    let sc13 = EventLoop::new().debug(true).build().unwrap();
+    //let device = Arc::new(Device::new(cfg).unwrap());
 
-    let mut i = ir::Ir::new(&device);
+    let mut i = ir::Ir::new(&sc13.device);
     let x = i.arange(ir::VarType::UInt32, 10);
     let y = i.array_f32(&[1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]);
     let z = i.add(x, y);
@@ -37,7 +38,7 @@ fn main() {
     //println!("{}", module.disassemble());
 
     let mut graph = RenderGraph::new();
-    let mut pool = LazyPool::new(&device);
+    let mut pool = LazyPool::new(&sc13.device);
 
     k.execute(&i, &mut graph);
 

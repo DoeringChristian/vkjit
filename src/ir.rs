@@ -181,6 +181,7 @@ pub struct Kernel {
     pub num: Option<usize>,
 
     pub bindings: HashMap<usize, Binding>,
+    pub arrays: HashMap<usize, u32>,
 
     // Variables used by many kernels
     pub idx: Option<u32>,
@@ -204,29 +205,37 @@ impl Kernel {
             b: rspirv::dr::Builder::new(),
             vars: HashMap::default(),
             bindings: HashMap::default(),
+            arrays: HashMap::default(),
             num: None,
             idx: None,
             global_invocation_id: None,
         }
     }
-    fn binding(&mut self, var: usize, access: Access) -> Binding {
-        if !self.bindings.contains_key(&var) {
+    fn binding(&mut self, id: usize, access: Access) -> Binding {
+        if !self.bindings.contains_key(&id) {
             let binding = Binding {
                 binding: 0,
                 set: self.bindings.len() as u32,
                 access,
             };
-            self.bindings.insert(var, binding);
+            self.bindings.insert(id, binding);
             binding
         } else {
-            self.bindings[&var]
+            self.bindings[&id]
         }
     }
-    ///
-    /// Return a pointer to the binding at an index
-    /// Note that idx is a spirv variable
-    ///
-    fn access_binding_at(&mut self, ty: u32, binding: Binding, idx: u32) -> u32 {
+    fn record_array(&mut self, id: usize, ir: &Ir) -> u32 {
+        if self.arrays.contains_key(&id) {
+            return self.arrays[&id];
+        }
+
+        let var = &ir.vars[id];
+
+        self.set_num(var.array.as_ref().unwrap().count());
+        // https://shader-playground.timjones.io/3af32078f879d8599902e46b919dbfe3
+        let binding = self.binding(id, Access::Read);
+        let ty = var.ty.to_spirv(&mut self.b);
+
         let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
         let arr = self
             .b
@@ -241,12 +250,27 @@ impl Kernel {
             spirv::Decoration::DescriptorSet,
             vec![rspirv::dr::Operand::LiteralInt32(binding.set)],
         );
-        let ptr = self.b.access_chain(ptr_ty, None, arr, vec![idx]).unwrap();
+        arr
+    }
+    ///
+    /// Return a pointer to the binding at an index
+    /// Note that idx is a spirv variable
+    ///
+    fn access_binding_at(&mut self, id: usize, ir: &Ir, idx: u32) -> u32 {
+        let var = &ir.vars[id];
+        let ty = var.ty.to_spirv(&mut self.b);
+
+        let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
+        let ptr = self
+            .b
+            .access_chain(ptr_ty, None, self.arrays[&id], vec![idx])
+            .unwrap();
         ptr
     }
 
-    fn access_binding(&mut self, ty: u32, binding: Binding) -> u32 {
-        self.access_binding_at(ty, binding, self.idx.unwrap())
+    fn access_binding(&mut self, id: usize, ir: &Ir) -> u32 {
+        let idx = self.idx.unwrap();
+        self.access_binding_at(id, ir, idx)
     }
     fn set_num(&mut self, num: usize) {
         if let Some(num_) = self.num {
@@ -257,6 +281,22 @@ impl Kernel {
         } else {
             self.num = Some(num);
         }
+    }
+    fn record_bindings(&mut self, id: usize, ir: &Ir) {
+        if self.arrays.contains_key(&id) {
+            return;
+        }
+        let var = &ir.vars[id];
+        match var.op {
+            Op::Bop(_, lhs, rhs) => {
+                self.record_array(lhs, ir);
+                self.record_array(rhs, ir);
+            }
+            Op::Binding => {
+                self.record_array(id, ir);
+            }
+            _ => {}
+        };
     }
     fn record_var(&mut self, id: usize, ir: &Ir) -> u32 {
         if self.vars.contains_key(&id) {
@@ -316,19 +356,24 @@ impl Kernel {
                 ret
             }
             Op::Binding => {
-                self.set_num(var.array.as_ref().unwrap().count());
-                // https://shader-playground.timjones.io/3af32078f879d8599902e46b919dbfe3
-                let binding = self.binding(id, Access::Read);
                 let ty = var.ty.to_spirv(&mut self.b);
-
-                let ptr = self.access_binding(ty, binding);
+                let ptr = self.access_binding(id, ir);
                 let ret = self.b.load(ty, None, ptr, None, None).unwrap();
                 ret
             }
             _ => unimplemented!(),
         }
     }
-    pub fn record_idx(&mut self, ir: &Ir) {
+    pub fn compile(&mut self, ir: &mut Ir, schedule: Vec<usize>) -> Vec<usize> {
+        // Setup kernel with main function
+        self.b.set_version(1, 3);
+        self.b.capability(spirv::Capability::Shader);
+        self.b.memory_model(
+            rspirv::spirv::AddressingModel::Logical,
+            rspirv::spirv::MemoryModel::Simple,
+        );
+
+        // global invocation id
         let uint = self.b.type_int(32, 0);
         let v3uint = self.b.type_vector(uint, 3);
         let ptr_input_v3uint =
@@ -347,6 +392,46 @@ impl Kernel {
                 spirv::BuiltIn::GlobalInvocationId,
             )],
         );
+
+        // Record binding arrays before function
+        let schedule = schedule
+            .iter()
+            .map(|id1| {
+                let ty = &ir.vars[*id1].ty.clone();
+                let device = ir.device.clone();
+                let id2 = ir.push_var(Var {
+                    op: Op::Binding,
+                    array: Some(Arc::new(Array::create(
+                        &device,
+                        ty,
+                        self.num.expect("Could not determine size of kernel!"),
+                        vk::BufferUsageFlags::STORAGE_BUFFER,
+                    ))),
+                    ty: ty.clone(),
+                });
+                self.record_bindings(*id1, ir);
+                self.record_bindings(id2, ir);
+                (*id1, id2)
+            })
+            .collect::<Vec<_>>();
+
+        // Setup main function
+        let void = self.b.type_void();
+        let voidf = self.b.type_function(void, vec![]);
+        let main = self
+            .b
+            .begin_function(
+                void,
+                None,
+                rspirv::spirv::FunctionControl::DONT_INLINE | rspirv::spirv::FunctionControl::CONST,
+                voidf,
+            )
+            .unwrap();
+        self.b
+            .execution_mode(main, spirv::ExecutionMode::LocalSize, vec![1, 1, 1]);
+        self.b.begin_block(None).unwrap();
+
+        //self.record_idx(ir);
         // Load x component of GlobalInvocationId
         let uint_0 = self.b.constant_u32(uint, 0);
         let uint = self.b.type_int(32, 0);
@@ -358,58 +443,23 @@ impl Kernel {
         let idx = self.b.load(uint, None, ptr, None, None).unwrap();
         self.idx = Some(idx);
         self.global_invocation_id = Some(global_invocation_id);
-    }
-    pub fn compile(&mut self, ir: &mut Ir, schedule: Vec<usize>) -> Vec<usize> {
-        // Setup kernel with main function
-        self.b.set_version(1, 3);
-        self.b.memory_model(
-            rspirv::spirv::AddressingModel::Logical,
-            rspirv::spirv::MemoryModel::Simple,
-        );
 
-        let void = self.b.type_void();
-        let voidf = self.b.type_function(void, vec![void]);
-        let main = self
-            .b
-            .begin_function(
-                void,
-                None,
-                rspirv::spirv::FunctionControl::DONT_INLINE | rspirv::spirv::FunctionControl::CONST,
-                voidf,
-            )
-            .unwrap();
-        self.b.begin_block(None).unwrap();
-
-        self.record_idx(ir);
+        // record scheduled variables
 
         let schedule = schedule
             .iter()
-            .map(|id| (id, self.record_var(*id, ir)))
+            .map(|(id1, id2)| {
+                let spv_id = self.record_var(*id1, ir);
+                (*id2, spv_id)
+            })
             .collect::<Vec<_>>();
 
         let result = schedule
             .iter()
-            .map(|(id, id_spv)| {
-                // Create new variable to save result
-                let ty = &ir.vars[**id].ty.clone();
-                let device = ir.device.clone();
-                let var = ir.push_var(Var {
-                    op: Op::Binding,
-                    array: Some(Arc::new(Array::create(
-                        &device,
-                        ty,
-                        self.num.expect("Could not determine size of kernel!"),
-                        vk::BufferUsageFlags::STORAGE_BUFFER,
-                    ))),
-                    ty: ty.clone(),
-                });
-
-                // Bind variable and write result
-                let binding = self.binding(var, Access::Write);
-                let ty = ty.to_spirv(&mut self.b);
-                let ptr = self.access_binding(ty, binding);
-                self.b.store(ptr, *id_spv, None, None).unwrap();
-                var
+            .map(|(id2, spv_id)| {
+                let ptr = self.access_binding(*id2, ir);
+                self.b.store(ptr, *spv_id, None, None).unwrap();
+                *id2
             })
             .collect::<Vec<_>>();
 
