@@ -179,7 +179,7 @@ impl Kernel {
     }
     fn set_num(&mut self, num: usize) {
         if let Some(num_) = self.num {
-            assert!(num_ == num)
+            assert!(num_ == num, "Mismatch between variable sizes!")
         } else {
             self.num = Some(num);
         }
