@@ -1,6 +1,9 @@
 use rspirv::spirv;
+use screen_13::prelude::vk;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+use crate::array::{self, Array};
 
 #[derive(Debug, Clone, Copy)]
 enum Bop {
@@ -17,14 +20,15 @@ enum Const {
 
 #[derive(Debug, Clone, Copy)]
 enum Op {
-    Array,
+    Binding,
     Bop(Bop, usize, usize),
     Arange(usize),
     Const(Const),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum VarType {
+    Struct(Vec<VarType>),
     Void,
     Bool,
     UInt32,
@@ -53,6 +57,7 @@ impl VarType {
             VarType::UInt32 => b.type_int(32, 0),
             VarType::Int32 => b.type_int(32, 1),
             VarType::Float32 => b.type_float(32),
+            _ => unimplemented!(),
         }
     }
 }
@@ -70,6 +75,7 @@ impl From<VarType> for rspirv::sr::Type {
                 signedness: 1,
             },
             VarType::Float32 => Self::Float { width: 32 },
+            _ => unimplemented!(),
         }
     }
 }
@@ -77,29 +83,39 @@ impl From<VarType> for rspirv::sr::Type {
 #[derive(Debug, Clone)]
 struct Var {
     op: Op,
-    buffer: Option<Arc<screen_13::driver::buffer::Buffer>>,
+    array: Option<Arc<array::Array>>,
     ty: VarType,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Ir {
+    device: Arc<screen_13::driver::Device>,
     vars: Vec<Var>,
 }
 impl Ir {
+    pub fn new(device: &Arc<screen_13::driver::Device>) -> Self {
+        Self {
+            device: device.clone(),
+            vars: Vec::default(),
+        }
+    }
     fn new_var(&mut self, op: Op, ty: VarType) -> usize {
-        let id = self.vars.len();
-        self.vars.push(Var {
+        self.push_var(Var {
             op,
             ty,
-            buffer: None,
-        });
+            array: None,
+        })
+    }
+    fn push_var(&mut self, var: Var) -> usize {
+        let id = self.vars.len();
+        self.vars.push(var);
         id
     }
     pub fn add(&mut self, lhs: usize, rhs: usize) -> usize {
-        let lhs_ty = self.vars[lhs].ty;
-        let rhs_ty = self.vars[rhs].ty;
+        let lhs_ty = &self.vars[lhs].ty;
+        let rhs_ty = &self.vars[rhs].ty;
         let ty = lhs_ty.max(rhs_ty);
-        self.new_var(Op::Bop(Bop::Add, lhs, rhs), ty)
+        self.new_var(Op::Bop(Bop::Add, lhs, rhs), ty.clone())
     }
     pub fn arange(&mut self, ty: VarType, num: usize) -> usize {
         self.new_var(Op::Arange(num), ty)
@@ -116,12 +132,25 @@ impl Ir {
     pub fn const_bool(&mut self, val: bool) -> usize {
         self.new_var(Op::Const(Const::Bool(val)), VarType::Bool)
     }
+    pub fn array_f32(&mut self, data: &[f32]) -> usize {
+        self.push_var(Var {
+            ty: VarType::Float32,
+            op: Op::Binding,
+            array: Some(Arc::new(Array::create(
+                &self.device,
+                data,
+                vk::BufferUsageFlags::STORAGE_BUFFER,
+            ))),
+        })
+    }
 }
 
 pub struct Compiler {
     pub b: rspirv::dr::Builder,
     pub vars: HashMap<usize, u32>,
     pub num: Option<usize>,
+
+    pub bindings: HashMap<usize, (u32, u32)>,
 
     // Variables used by many kernels
     pub idx: Option<u32>,
@@ -133,9 +162,19 @@ impl Compiler {
         Self {
             b: rspirv::dr::Builder::new(),
             vars: HashMap::default(),
+            bindings: HashMap::default(),
             num: None,
             idx: None,
             global_invocation_id: None,
+        }
+    }
+    fn bind(&mut self, var: usize) -> (u32, u32) {
+        if !self.bindings.contains_key(&var) {
+            let binding = (0, self.bindings.len() as u32);
+            self.bindings.insert(var, binding);
+            binding
+        } else {
+            self.bindings[&var]
         }
     }
     fn set_num(&mut self, num: usize) {
@@ -202,8 +241,32 @@ impl Compiler {
                 self.vars.insert(id, ret);
                 ret
             }
-            Op::Array => {
-                todo!()
+            Op::Binding => {
+                // https://shader-playground.timjones.io/3af32078f879d8599902e46b919dbfe3
+                let binding = self.bind(id);
+
+                let ty = var.ty.to_spirv(&mut self.b);
+                //let ty_runtimearr = self.b.type_runtime_array(ty);
+                let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
+                let arr = self
+                    .b
+                    .variable(ptr_ty, None, spirv::StorageClass::Uniform, None);
+                self.b.decorate(
+                    arr,
+                    spirv::Decoration::Binding,
+                    vec![rspirv::dr::Operand::LiteralInt32(binding.1)],
+                );
+                self.b.decorate(
+                    arr,
+                    spirv::Decoration::DescriptorSet,
+                    vec![rspirv::dr::Operand::LiteralInt32(binding.1)],
+                );
+                let ptr = self
+                    .b
+                    .access_chain(ptr_ty, None, arr, vec![self.idx.unwrap()])
+                    .unwrap();
+                let ret = self.b.load(ty, None, ptr, None, None).unwrap();
+                ret
             }
             _ => unimplemented!(),
         }

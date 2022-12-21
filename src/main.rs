@@ -1,3 +1,4 @@
+use screen_13::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -32,7 +33,10 @@ fn build() -> Result<(), rspirv::dr::Error> {
 }
 
 fn main() {
-    let mut i = ir::Ir::default();
+    let cfg = DriverConfig::new().debug(true).build();
+    let device = Arc::new(Device::new(cfg).unwrap());
+
+    let mut i = ir::Ir::new(&device);
     let x = i.arange(ir::VarType::UInt32, 10);
     let y = i.const_u32(2);
     let z = i.add(x, y);
