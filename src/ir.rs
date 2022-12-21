@@ -190,8 +190,8 @@ pub enum Access {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Binding {
-    pub binding: u32,
     pub set: u32,
+    pub binding: u32,
     pub access: Access,
 }
 
@@ -236,8 +236,8 @@ impl Kernel {
     fn binding(&mut self, id: usize, access: Access) -> Binding {
         if !self.bindings.contains_key(&id) {
             let binding = Binding {
-                binding: 0,
-                set: self.bindings.len() as u32,
+                set: 0,
+                binding: self.bindings.len() as u32,
                 access,
             };
             self.bindings.insert(id, binding);
@@ -296,12 +296,12 @@ impl Kernel {
         self.b.decorate(
             st,
             spirv::Decoration::Binding,
-            vec![rspirv::dr::Operand::LiteralInt32(binding.binding)],
+            vec![rspirv::dr::Operand::LiteralInt32(binding.set)],
         );
         self.b.decorate(
             st,
             spirv::Decoration::DescriptorSet,
-            vec![rspirv::dr::Operand::LiteralInt32(binding.set)],
+            vec![rspirv::dr::Operand::LiteralInt32(binding.binding)],
         );
         self.arrays.insert(id, st);
         st
