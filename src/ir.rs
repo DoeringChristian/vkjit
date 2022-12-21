@@ -40,6 +40,16 @@ pub enum VarType {
     Float32,
 }
 impl VarType {
+    pub fn name(&self) -> String {
+        match self {
+            VarType::Void => "Void".into(),
+            VarType::Bool => "Bool".into(),
+            VarType::UInt32 => "UInt32".into(),
+            VarType::Int32 => "Int32".into(),
+            VarType::Float32 => "Float32".into(),
+            _ => unimplemented!(),
+        }
+    }
     pub fn stride(&self) -> usize {
         match self {
             VarType::Void => 0,
@@ -236,7 +246,7 @@ impl Kernel {
             self.bindings[&id]
         }
     }
-    fn record_array_struct(&mut self, ty: &VarType) -> u32 {
+    fn record_array_struct_ty(&mut self, ty: &VarType) -> u32 {
         if self.array_structs.contains_key(ty) {
             return self.array_structs[ty];
         }
@@ -263,6 +273,8 @@ impl Kernel {
             spirv::Decoration::Offset,
             vec![rspirv::dr::Operand::LiteralInt32(0)],
         );
+        self.b.name(ty_struct, ty.name());
+
         self.array_structs.insert(ty.clone(), ty_struct_ptr);
         ty_struct_ptr
     }
@@ -276,7 +288,7 @@ impl Kernel {
         self.set_num(var.array.as_ref().unwrap().count());
         // https://shader-playground.timjones.io/3af32078f879d8599902e46b919dbfe3
         let binding = self.binding(id, Access::Read);
-        let ty_struct_ptr = self.record_array_struct(&var.ty);
+        let ty_struct_ptr = self.record_array_struct_ty(&var.ty);
 
         let st = self
             .b
@@ -480,6 +492,8 @@ impl Kernel {
                 (*id1, id2)
             })
             .collect::<Vec<_>>();
+
+        //
 
         println!("{:#?}", self.bindings);
         println!("{:#?}", self.arrays);
