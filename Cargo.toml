@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 rspirv = "*"
-screen-13 = "*"
+screen-13 = {path = "ext/screen-13"}
 glam = "0.22"
 crevice = {version = "*", features = ["glam"]}
 bytemuck = "*"
