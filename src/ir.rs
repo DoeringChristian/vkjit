@@ -3,6 +3,8 @@ use screen_13::prelude::vk;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crevice::std140::{self, AsStd140};
+
 use crate::array::{self, Array};
 
 #[derive(Debug, Clone, Copy)]
@@ -36,6 +38,16 @@ pub enum VarType {
     Float32,
 }
 impl VarType {
+    pub fn size(&self) -> usize {
+        match self {
+            VarType::Void => 0,
+            VarType::Bool => bool::std140_size_static(),
+            VarType::UInt32 => u32::std140_size_static(),
+            VarType::Int32 => i32::std140_size_static(),
+            VarType::Float32 => f32::std140_size_static(),
+            _ => unimplemented!(),
+        }
+    }
     #[allow(unused)]
     pub fn from_rs<T: 'static>() -> Self {
         let ty_f32 = std::any::TypeId::of::<f32>();
@@ -136,7 +148,7 @@ impl Ir {
         self.push_var(Var {
             ty: VarType::Float32,
             op: Op::Binding,
-            array: Some(Arc::new(Array::create(
+            array: Some(Arc::new(Array::from_slice(
                 &self.device,
                 data,
                 vk::BufferUsageFlags::STORAGE_BUFFER,
@@ -168,7 +180,7 @@ impl Kernel {
             global_invocation_id: None,
         }
     }
-    fn bind(&mut self, var: usize) -> (u32, u32) {
+    fn binding(&mut self, var: usize) -> (u32, u32) {
         if !self.bindings.contains_key(&var) {
             let binding = (0, self.bindings.len() as u32);
             self.bindings.insert(var, binding);
@@ -177,9 +189,38 @@ impl Kernel {
             self.bindings[&var]
         }
     }
+    ///
+    /// Return a pointer to the binding at an index
+    /// Note that idx is a spirv variable
+    ///
+    fn access_binding_at(&mut self, ty: u32, binding: (u32, u32), idx: u32) -> u32 {
+        let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
+        let arr = self
+            .b
+            .variable(ptr_ty, None, spirv::StorageClass::Uniform, None);
+        self.b.decorate(
+            arr,
+            spirv::Decoration::Binding,
+            vec![rspirv::dr::Operand::LiteralInt32(binding.1)],
+        );
+        self.b.decorate(
+            arr,
+            spirv::Decoration::DescriptorSet,
+            vec![rspirv::dr::Operand::LiteralInt32(binding.1)],
+        );
+        let ptr = self.b.access_chain(ptr_ty, None, arr, vec![idx]).unwrap();
+        ptr
+    }
+
+    fn access_binding(&mut self, ty: u32, binding: (u32, u32)) -> u32 {
+        self.access_binding_at(ty, binding, self.idx.unwrap())
+    }
     fn set_num(&mut self, num: usize) {
         if let Some(num_) = self.num {
-            assert!(num_ == num, "Mismatch between variable sizes!")
+            assert!(
+                num_ == num,
+                "All variables in the kernel have to have the same number of elements!"
+            )
         } else {
             self.num = Some(num);
         }
@@ -244,28 +285,10 @@ impl Kernel {
             Op::Binding => {
                 self.set_num(var.array.as_ref().unwrap().count());
                 // https://shader-playground.timjones.io/3af32078f879d8599902e46b919dbfe3
-                let binding = self.bind(id);
-
+                let binding = self.binding(id);
                 let ty = var.ty.to_spirv(&mut self.b);
-                //let ty_runtimearr = self.b.type_runtime_array(ty);
-                let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
-                let arr = self
-                    .b
-                    .variable(ptr_ty, None, spirv::StorageClass::Uniform, None);
-                self.b.decorate(
-                    arr,
-                    spirv::Decoration::Binding,
-                    vec![rspirv::dr::Operand::LiteralInt32(binding.1)],
-                );
-                self.b.decorate(
-                    arr,
-                    spirv::Decoration::DescriptorSet,
-                    vec![rspirv::dr::Operand::LiteralInt32(binding.1)],
-                );
-                let ptr = self
-                    .b
-                    .access_chain(ptr_ty, None, arr, vec![self.idx.unwrap()])
-                    .unwrap();
+
+                let ptr = self.access_binding(ty, binding);
                 let ret = self.b.load(ty, None, ptr, None, None).unwrap();
                 ret
             }
@@ -303,7 +326,7 @@ impl Kernel {
         self.idx = Some(idx);
         self.global_invocation_id = Some(global_invocation_id);
     }
-    pub fn compile(&mut self, ir: &Ir, schedule: Vec<usize>) {
+    pub fn compile(&mut self, ir: &mut Ir, schedule: Vec<usize>) -> Vec<usize> {
         // Setup kernel with main function
         self.b.set_version(1, 3);
         self.b.memory_model(
@@ -326,9 +349,36 @@ impl Kernel {
 
         self.record_idx(ir);
 
-        for var in schedule {
-            self.record_var(var, ir);
-        }
+        let schedule = schedule
+            .iter()
+            .map(|id| (id, self.record_var(*id, ir)))
+            .collect::<Vec<_>>();
+
+        let result = schedule
+            .iter()
+            .map(|(id, id_spv)| {
+                // Create new variable to save result
+                let ty = &ir.vars[**id].ty.clone();
+                let device = ir.device.clone();
+                let var = ir.push_var(Var {
+                    op: Op::Binding,
+                    array: Some(Arc::new(Array::create(
+                        &device,
+                        ty,
+                        self.num.expect("Could not determine size of kernel!"),
+                        vk::BufferUsageFlags::STORAGE_BUFFER,
+                    ))),
+                    ty: ty.clone(),
+                });
+
+                // Bind variable and write result
+                let binding = self.binding(var);
+                let ty = ty.to_spirv(&mut self.b);
+                let ptr = self.access_binding(ty, binding);
+                self.b.store(ptr, *id_spv, None, None).unwrap();
+                var
+            })
+            .collect::<Vec<_>>();
 
         // End main function
         self.b.ret().unwrap();
@@ -339,5 +389,7 @@ impl Kernel {
             "main",
             vec![],
         );
+
+        result
     }
 }

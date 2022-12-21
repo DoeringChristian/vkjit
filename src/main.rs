@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use rspirv::binary::Disassemble;
 
+use crate::array::Array;
+
 #[allow(dead_code)]
 mod array;
 #[allow(dead_code)]
@@ -43,6 +45,6 @@ fn main() {
     let z = i.add(x, y);
 
     let mut k = ir::Kernel::new();
-    k.compile(&i, vec![z]);
+    let res = k.compile(&mut i, vec![z]);
     println!("{}", k.b.module().disassemble());
 }

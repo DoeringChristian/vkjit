@@ -3,10 +3,7 @@ use screen_13::prelude::*;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-#[derive(AsStd140)]
-struct Metadata {
-    count: u32,
-}
+use crate::ir::VarType;
 
 #[derive(Debug)]
 pub struct Array {
@@ -16,22 +13,31 @@ pub struct Array {
 }
 
 impl Array {
-    pub fn create<T: AsStd140>(
+    pub fn create(
+        device: &Arc<Device>,
+        ty: &VarType,
+        count: usize,
+        usage: vk::BufferUsageFlags,
+    ) -> Self {
+        let size = ty.size() * count;
+        let mut buf = Buffer::create(device, BufferInfo::new(size as u64, usage)).unwrap();
+        Self {
+            buf: Arc::new(buf),
+            count,
+            device: device.clone(),
+        }
+    }
+    pub fn from_slice<T: AsStd140>(
         device: &Arc<Device>,
         data: &[T],
         usage: vk::BufferUsageFlags,
     ) -> Self {
         let count = data.len();
-        let size = Metadata::std140_size_static() + T::std140_size_static() * count;
+        let size = T::std140_size_static() * count;
         let buf = Arc::new({
             let mut buf =
                 Buffer::create(device, BufferInfo::new_mappable(size as u64, usage)).unwrap();
             let mut writer = std140::Writer::new(Buffer::mapped_slice_mut(&mut buf));
-            writer
-                .write(&Metadata {
-                    count: count as u32,
-                })
-                .unwrap();
             writer.write(data).unwrap();
             buf
         });
