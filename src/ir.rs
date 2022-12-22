@@ -281,7 +281,7 @@ impl Kernel {
         self.array_structs.insert(ty.clone(), ty_struct_ptr);
         ty_struct_ptr
     }
-    fn record_binding(&mut self, id: usize, ir: &Ir) -> u32 {
+    fn record_binding(&mut self, id: usize, ir: &Ir, access: Access) -> u32 {
         if self.arrays.contains_key(&id) {
             return self.arrays[&id];
         }
@@ -290,7 +290,7 @@ impl Kernel {
 
         self.set_num(var.array.as_ref().unwrap().count());
         // https://shader-playground.timjones.io/3af32078f879d8599902e46b919dbfe3
-        let binding = self.binding(id, Access::Read);
+        let binding = self.binding(id, access);
         let ty_struct_ptr = self.record_array_struct_ty(&var.ty);
 
         let st = self
@@ -358,18 +358,18 @@ impl Kernel {
             _ => {}
         };
     }
-    fn record_bindings(&mut self, id: usize, ir: &Ir) {
+    fn record_bindings(&mut self, id: usize, ir: &Ir, access: Access) {
         if self.arrays.contains_key(&id) {
             return;
         }
         let var = &ir.vars[id];
         match var.op {
             Op::Bop(_, lhs, rhs) => {
-                self.record_bindings(lhs, ir);
-                self.record_bindings(rhs, ir);
+                self.record_bindings(lhs, ir, access);
+                self.record_bindings(rhs, ir, access);
             }
             Op::Binding => {
-                self.record_binding(id, ir);
+                self.record_binding(id, ir, access);
             }
             _ => {}
         };
@@ -490,8 +490,8 @@ impl Kernel {
                     ))),
                     ty: ty.clone(),
                 });
-                self.record_bindings(*id1, ir);
-                self.record_bindings(id2, ir);
+                self.record_bindings(*id1, ir, Access::Read);
+                self.record_bindings(id2, ir, Access::Write);
                 (*id1, id2)
             })
             .collect::<Vec<_>>();
@@ -587,6 +587,7 @@ impl Kernel {
                     pass = pass.read_descriptor((binding.set, binding.binding), nodes[&id]);
                 }
                 Access::Write => {
+                    println!("test");
                     pass = pass.write_descriptor((binding.set, binding.binding), nodes[&id]);
                 }
             }

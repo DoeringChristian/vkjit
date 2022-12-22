@@ -49,6 +49,7 @@ fn main() {
 
     println!("res={:#?}", res[0]);
     let var = i.var(res[0]);
+    println!("{:#?}", var.array.as_ref().unwrap());
     let res = Buffer::mapped_slice(&var.array.as_ref().unwrap().buf);
     let res: &[f32] = cast_slice(res);
     println!("{:#?}", res);
