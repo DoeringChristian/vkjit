@@ -587,7 +587,6 @@ impl Kernel {
                     pass = pass.read_descriptor((binding.set, binding.binding), nodes[&id]);
                 }
                 Access::Write => {
-                    println!("test");
                     pass = pass.write_descriptor((binding.set, binding.binding), nodes[&id]);
                 }
             }
