@@ -112,7 +112,8 @@ impl From<VarType> for rspirv::sr::Type {
 #[derive(Debug, Clone)]
 pub struct Var {
     op: Op,
-    dependencies: Vec<usize>,
+    // Dependencies
+    deps: Vec<usize>,
     pub array: Option<Arc<array::Array>>,
     ty: VarType,
 }
@@ -134,7 +135,7 @@ impl Ir {
     }
     fn new_var(&mut self, op: Op, dep: Vec<usize>, ty: VarType) -> usize {
         self.push_var(Var {
-            dependencies: dep,
+            deps: dep,
             op,
             ty,
             array: None,
@@ -173,7 +174,7 @@ impl Ir {
         self.push_var(Var {
             ty: VarType::Float32,
             op: Op::Binding,
-            dependencies: vec![],
+            deps: vec![],
             array: Some(Arc::new(Array::from_slice(
                 &self.device,
                 data,
@@ -350,8 +351,8 @@ impl Kernel {
                 self.set_num(num);
             }
             _ => {
-                for dep in var.dependencies {
-                    self.record_kernel_size(dep, ir);
+                for dep in var.deps.iter() {
+                    self.record_kernel_size(*dep, ir);
                 }
             }
         };
@@ -366,8 +367,8 @@ impl Kernel {
                 self.record_binding(id, ir, access);
             }
             _ => {
-                for dep in var.dependencies {
-                    self.record_bindings(dep, ir, access);
+                for dep in var.deps.iter() {
+                    self.record_bindings(*dep, ir, access);
                 }
             }
         };
@@ -397,8 +398,8 @@ impl Kernel {
                 ret
             }
             Op::Add => {
-                let lhs = self.record_var(var.dependencies[0], ir);
-                let rhs = self.record_var(var.dependencies[0], ir);
+                let lhs = self.record_var(var.deps[0], ir);
+                let rhs = self.record_var(var.deps[0], ir);
                 let ty = var.ty.to_spirv(&mut self.b);
                 let ret = match var.ty {
                     VarType::Int32 | VarType::UInt32 => self.b.i_add(ty, None, lhs, rhs).unwrap(),
@@ -475,6 +476,7 @@ impl Kernel {
                 let ty = &ir.vars[*id1].ty.clone();
                 let device = ir.device.clone();
                 let id2 = ir.push_var(Var {
+                    deps: vec![],
                     op: Op::Binding,
                     array: Some(Arc::new(Array::create(
                         &device,
