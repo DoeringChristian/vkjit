@@ -566,7 +566,27 @@ impl Kernel {
         let module = self.b.module();
         println!("{}", module.disassemble());
 
-        let spv = module.assemble();
+        let spv = inline_spirv::inline_spirv!(
+            r##"
+            #version 460
+        
+            layout(set = 0, binding = 0) buffer Float{
+                float f[];
+            };
+            layout(set = 1, binding = 0) buffer Float2{
+                float f2[];
+            };
+            void main(){
+                int i = int(gl_GlobalInvocationID.x);
+                f2[i] = f[1];
+            }
+            "##,
+            glsl,
+            comp
+        )
+        .as_slice();
+
+        //let spv = module.assemble();
         let pipeline = Arc::new(ComputePipeline::create(&ir.device, spv).unwrap());
 
         let nodes = self
