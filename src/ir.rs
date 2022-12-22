@@ -10,11 +10,6 @@ use crevice::std140::{self, AsStd140};
 use crate::array::{self, Array};
 
 #[derive(Debug, Clone, Copy)]
-enum Bop {
-    Add,
-}
-
-#[derive(Debug, Clone, Copy)]
 enum Const {
     Bool(bool),
     UInt32(u32),
@@ -25,7 +20,7 @@ enum Const {
 #[derive(Debug, Clone, Copy)]
 enum Op {
     Binding,
-    Bop(Bop, usize, usize),
+    Add,
     Arange(usize),
     Const(Const),
 }
@@ -117,6 +112,7 @@ impl From<VarType> for rspirv::sr::Type {
 #[derive(Debug, Clone)]
 pub struct Var {
     op: Op,
+    dependencies: Vec<usize>,
     pub array: Option<Arc<array::Array>>,
     ty: VarType,
 }
@@ -136,8 +132,9 @@ impl Ir {
     pub fn array(&self, id: usize) -> &Arc<array::Array> {
         self.vars[id].array.as_ref().unwrap()
     }
-    fn new_var(&mut self, op: Op, ty: VarType) -> usize {
+    fn new_var(&mut self, op: Op, dep: Vec<usize>, ty: VarType) -> usize {
         self.push_var(Var {
+            dependencies: dep,
             op,
             ty,
             array: None,
@@ -155,27 +152,28 @@ impl Ir {
         let lhs_ty = &self.vars[lhs].ty;
         let rhs_ty = &self.vars[rhs].ty;
         let ty = lhs_ty.max(rhs_ty);
-        self.new_var(Op::Bop(Bop::Add, lhs, rhs), ty.clone())
+        self.new_var(Op::Add, vec![lhs, rhs], ty.clone())
     }
     pub fn arange(&mut self, ty: VarType, num: usize) -> usize {
-        self.new_var(Op::Arange(num), ty)
+        self.new_var(Op::Arange(num), vec![], ty)
     }
     pub fn const_f32(&mut self, val: f32) -> usize {
-        self.new_var(Op::Const(Const::Float32(val)), VarType::Float32)
+        self.new_var(Op::Const(Const::Float32(val)), vec![], VarType::Float32)
     }
     pub fn const_i32(&mut self, val: i32) -> usize {
-        self.new_var(Op::Const(Const::Int32(val)), VarType::Int32)
+        self.new_var(Op::Const(Const::Int32(val)), vec![], VarType::Int32)
     }
     pub fn const_u32(&mut self, val: u32) -> usize {
-        self.new_var(Op::Const(Const::UInt32(val)), VarType::UInt32)
+        self.new_var(Op::Const(Const::UInt32(val)), vec![], VarType::UInt32)
     }
     pub fn const_bool(&mut self, val: bool) -> usize {
-        self.new_var(Op::Const(Const::Bool(val)), VarType::Bool)
+        self.new_var(Op::Const(Const::Bool(val)), vec![], VarType::Bool)
     }
     pub fn array_f32(&mut self, data: &[f32]) -> usize {
         self.push_var(Var {
             ty: VarType::Float32,
             op: Op::Binding,
+            dependencies: vec![],
             array: Some(Arc::new(Array::from_slice(
                 &self.device,
                 data,
@@ -345,17 +343,17 @@ impl Kernel {
     fn record_kernel_size(&mut self, id: usize, ir: &Ir) {
         let var = &ir.vars[id];
         match var.op {
-            Op::Bop(_, lhs, rhs) => {
-                self.record_kernel_size(lhs, ir);
-                self.record_kernel_size(rhs, ir);
-            }
             Op::Binding => {
                 self.set_num(var.array.as_ref().unwrap().count());
             }
             Op::Arange(num) => {
                 self.set_num(num);
             }
-            _ => {}
+            _ => {
+                for dep in var.dependencies {
+                    self.record_kernel_size(dep, ir);
+                }
+            }
         };
     }
     fn record_bindings(&mut self, id: usize, ir: &Ir, access: Access) {
@@ -364,14 +362,14 @@ impl Kernel {
         }
         let var = &ir.vars[id];
         match var.op {
-            Op::Bop(_, lhs, rhs) => {
-                self.record_bindings(lhs, ir, access);
-                self.record_bindings(rhs, ir, access);
-            }
             Op::Binding => {
                 self.record_binding(id, ir, access);
             }
-            _ => {}
+            _ => {
+                for dep in var.dependencies {
+                    self.record_bindings(dep, ir, access);
+                }
+            }
         };
     }
     fn record_var(&mut self, id: usize, ir: &Ir) -> u32 {
@@ -398,18 +396,14 @@ impl Kernel {
                 self.vars.insert(id, ret);
                 ret
             }
-            Op::Bop(bop, lhs, rhs) => {
-                let lhs = self.record_var(lhs, ir);
-                let rhs = self.record_var(rhs, ir);
+            Op::Add => {
+                let lhs = self.record_var(var.dependencies[0], ir);
+                let rhs = self.record_var(var.dependencies[0], ir);
                 let ty = var.ty.to_spirv(&mut self.b);
-                let ret = match bop {
-                    Bop::Add => match var.ty {
-                        VarType::Int32 | VarType::UInt32 => {
-                            self.b.i_add(ty, None, lhs, rhs).unwrap()
-                        }
-                        VarType::Float32 => self.b.f_add(ty, None, lhs, rhs).unwrap(),
-                        _ => panic!("Addition not defined for type {:?}", var.ty),
-                    },
+                let ret = match var.ty {
+                    VarType::Int32 | VarType::UInt32 => self.b.i_add(ty, None, lhs, rhs).unwrap(),
+                    VarType::Float32 => self.b.f_add(ty, None, lhs, rhs).unwrap(),
+                    _ => panic!("Addition not defined for type {:?}", var.ty),
                 };
                 self.vars.insert(id, ret);
                 ret
@@ -578,7 +572,7 @@ impl Kernel {
             };
             void main(){
                 int i = int(gl_GlobalInvocationID.x);
-                f2[i] = f[1];
+                f2[i] = 1.0;
             }
             "##,
             glsl,
@@ -604,16 +598,19 @@ impl Kernel {
             println!("id={id}");
             match binding.access {
                 Access::Read => {
+                    println!("Read");
                     pass = pass.read_descriptor((binding.set, binding.binding), nodes[&id]);
                 }
                 Access::Write => {
+                    println!("Write");
                     pass = pass.write_descriptor((binding.set, binding.binding), nodes[&id]);
                 }
             }
         }
         let num = self.num.unwrap();
-        pass.record_compute(move |compute, _| {
+        pass.record_compute(move |compute, bindings| {
             compute.dispatch(num as u32, 1, 1);
-        });
+        })
+        .submit_pass();
     }
 }

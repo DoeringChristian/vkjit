@@ -1,4 +1,5 @@
 use bytemuck::cast_slice;
+use screen_13::graph::Resolver;
 use screen_13::prelude::*;
 use spirq::ReflectConfig;
 use std::collections::HashMap;
