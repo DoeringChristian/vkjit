@@ -1205,6 +1205,8 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 [[package]]
 name = "screen-13"
 version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0566cfe54e810709948b0d3f8a528ddbf6f59c81fc579ffe0cfe93c8574cc9c"
 dependencies = [
  "ash 0.37.0+1.3.209",
  "ash-molten",
