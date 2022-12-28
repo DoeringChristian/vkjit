@@ -1,6 +1,6 @@
 use rspirv::binary::{Assemble, Disassemble};
 use rspirv::spirv;
-use screen_13::prelude::{vk, ComputePipeline, RenderGraph};
+use screen_13::prelude::{vk, ComputePipeline, LazyPool, RenderGraph};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -558,7 +558,7 @@ impl Kernel {
 
         result
     }
-    pub fn execute(self, ir: &Ir, graph: &mut RenderGraph) {
+    pub fn record_render_graph(self, ir: &Ir, graph: &mut RenderGraph) {
         let module = self.b.module();
         println!("{}", module.disassemble());
 
@@ -594,5 +594,15 @@ impl Kernel {
             compute.dispatch(num as u32, 1, 1);
         })
         .submit_pass();
+    }
+    pub fn execute(self, ir: &Ir, device: &Arc<screen_13::prelude::Device>) {
+        let mut graph = RenderGraph::new();
+        let mut pool = LazyPool::new(device);
+
+        self.record_render_graph(&ir, &mut graph);
+
+        graph.resolve().submit(&mut pool, 0).unwrap();
+
+        unsafe { device.device_wait_idle().unwrap() };
     }
 }

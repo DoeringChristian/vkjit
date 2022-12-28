@@ -41,14 +41,7 @@ fn main() {
     println!("{:#?}", res);
     println!("{:#?}", k);
 
-    let mut graph = RenderGraph::new();
-    let mut pool = LazyPool::new(&sc13.device);
-
-    k.execute(&i, &mut graph);
-
-    graph.resolve().submit(&mut pool, 0).unwrap();
-
-    unsafe { sc13.device.device_wait_idle().unwrap() };
+    k.execute(&i, &sc13.device);
 
     println!("res={:#?}", res[0]);
     let var = i.var(res[0]);
