@@ -1,4 +1,0 @@
-[submodule "ext/screen-13"]
-	path = ext/screen-13
-	url = https://github.com/DoeringChristian/screen-13.git
-	branch = master
