@@ -46,10 +46,5 @@ fn main() {
 
     k.execute(&i, &sc13.device);
 
-    println!("res={:#?}", res[0]);
-    let var = i.var(y);
-
-    let res = Buffer::mapped_slice(&var.array.as_ref().unwrap().buf);
-    let res: &[f32] = cast_slice(res);
-    println!("{:#?}", res);
+    i.print_buffer(y);
 }

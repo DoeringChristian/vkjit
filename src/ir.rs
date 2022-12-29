@@ -1,3 +1,4 @@
+use bytemuck::cast_slice;
 use rspirv::binary::{Assemble, Disassemble};
 use rspirv::spirv;
 use screen_13::prelude::{vk, ComputePipeline, LazyPool, RenderGraph};
@@ -269,6 +270,26 @@ impl Ir {
         let var = self.new_var(Op::Scatter, vec![dst_id, idx_id], src.ty.clone());
         self.vars[src_id].side_effects.push(var);
     }
+    pub fn print_buffer(&self, id: usize) {
+        let var = &self.vars[id];
+        let slice = screen_13::prelude::Buffer::mapped_slice(&var.array.as_ref().unwrap().buf);
+        match var.ty {
+            VarType::Float32 => {
+                println!("{:?}", cast_slice::<_, f32>(slice))
+            }
+            VarType::UInt32 => {
+                println!("{:?}", cast_slice::<_, u32>(slice))
+            }
+            VarType::Int32 => {
+                println!("{:?}", cast_slice::<_, i32>(slice))
+            }
+            VarType::Bool => {
+                println!("{:?}", cast_slice::<_, u8>(slice))
+            }
+            _ => unimplemented!(),
+        }
+    }
+    // Composite operations
 }
 
 #[derive(Debug, Clone, Copy)]
