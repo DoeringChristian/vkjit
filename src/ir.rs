@@ -31,6 +31,7 @@ enum Op {
     GetAttr(usize),
     SetAttr(usize),
     StructInit, // Structs are sotred as pointers and StructInit returns a pointer to a struct
+    Gather,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -257,6 +258,10 @@ impl Ir {
         let var = self.new_var(Op::SetAttr(idx), vec![src_id], src.ty.clone());
         let dst = &mut self.vars[dst_id];
         dst.side_effects.push(var);
+    }
+    pub fn gather(&mut self, src_id: usize, idx_id: usize) -> usize {
+        let src = &self.vars[src_id];
+        self.new_var(Op::Gather, vec![src_id, idx_id], src.ty.clone())
     }
 }
 
@@ -528,6 +533,15 @@ impl Kernel {
                 self.b.store(ptr, object, None, None).unwrap();
                 ptr
             }
+            Op::Gather => match ir.vars[var.deps[0]].op {
+                Op::Binding => {
+                    let ty = var.ty.to_spirv(&mut self.b);
+                    let idx = self.record_ops(var.deps[1], ir);
+                    let ptr = self.access_binding_at(var.deps[0], ir, idx);
+                    self.b.load(ty, None, ptr, None, None).unwrap()
+                }
+                _ => panic!("Can only gather from buffer!"),
+            },
             Op::Arange(num) => {
                 self.set_num(num);
                 let ret = match var.ty {

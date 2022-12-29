@@ -29,20 +29,19 @@ fn main() {
     let mut i = ir::Ir::new(&sc13.device);
 
     // Record kernel
-    let st = i.zeros(ir::VarType::Struct(vec![ir::VarType::Float32]));
-    let x = i.arange(ir::VarType::Float32, 3);
-    i.setattr(st, x, 0);
+    //let st = i.zeros(ir::VarType::Struct(vec![ir::VarType::Float32]));
+    //let x = i.arange(ir::VarType::Float32, 3);
+    //i.setattr(st, x, 0);
 
-    let z = i.getattr(st, 0);
-    let z = i.add(z, x);
+    //let z = i.getattr(st, 0);
+    //let z = i.add(z, x);
 
-    //let x = i.arange(ir::VarType::Float32, 10);
-    //let y = i.array_f32(&[1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]);
-    //let z = i.add(x, y);
-    //let x = i.arange(ir::VarType::Float32, 10);
+    let x = i.array_f32(&[0., 1., 2.]);
+    let idx = i.arange(ir::VarType::UInt32, 3);
+    let y = i.gather(x, idx);
 
     let mut k = ir::Kernel::new();
-    let res = k.compile(&mut i, vec![z]);
+    let res = k.compile(&mut i, vec![y]);
 
     k.execute(&i, &sc13.device);
 
