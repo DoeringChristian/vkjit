@@ -30,12 +30,13 @@ enum Op {
     Const(Const),
     Zero,
     Access(usize),
-    StructInit,
+    StructInit, // Structs are sotred as pointers and StructInit returns a pointer to a struct
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum VarType {
-    Struct(Vec<VarType>),
+    Struct(Vec<VarType>), // Structs are stored as pointer and StructInit returns a pointer to a
+    // struct
     Void,
     Bool,
     UInt32,
