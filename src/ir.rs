@@ -28,7 +28,9 @@ enum Op {
     Bop(Bop),
     Arange(usize),
     Const(Const),
+    Zero,
     Access(usize),
+    StructInit,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -170,6 +172,19 @@ impl Ir {
     }
     pub fn arange(&mut self, ty: VarType, num: usize) -> usize {
         self.new_var(Op::Arange(num), vec![], ty)
+    }
+    pub fn zero(&mut self, ty: VarType) -> usize {
+        self.new_var(Op::Zero, vec![], ty)
+    }
+    pub fn struct_init(&mut self, vars: Vec<usize>) -> usize {
+        let elems = vars
+            .iter()
+            .map(|id| {
+                let var = &self.vars[*id];
+                var.ty.clone()
+            })
+            .collect::<Vec<_>>();
+        self.new_var(Op::StructInit, vars, VarType::Struct(elems))
     }
     pub fn const_f32(&mut self, val: f32) -> usize {
         self.new_var(Op::Const(Const::Float32(val)), vec![], VarType::Float32)
@@ -421,6 +436,9 @@ impl Kernel {
                 self.vars.insert(id, ret);
                 ret
             }
+            Op::Zero => {
+                unimplemented!()
+            }
             Op::Bop(bop) => {
                 let lhs = self.record_var(var.deps[0], ir);
                 let rhs = self.record_var(var.deps[0], ir);
@@ -448,6 +466,15 @@ impl Kernel {
                     .access_chain(ptr_ty, None, var.deps[0] as _, vec![idx])
                     .unwrap();
                 self.b.load(ty, None, ptr, None, None).unwrap()
+            }
+            Op::StructInit => {
+                let ty = var.ty.to_spirv(&mut self.b);
+                let deps = var
+                    .deps
+                    .iter()
+                    .map(|dep| self.record_var(*dep, ir))
+                    .collect::<Vec<_>>();
+                self.b.composite_construct(ty, None, deps).unwrap()
             }
             Op::Arange(num) => {
                 self.set_num(num);
