@@ -28,7 +28,8 @@ enum Op {
     Bop(Bop),
     Arange(usize),
     Const(Const),
-    Access(usize),
+    GetAttr(usize),
+    SetAttr(usize),
     StructInit, // Structs are sotred as pointers and StructInit returns a pointer to a struct
 }
 
@@ -129,6 +130,7 @@ pub struct Var {
     op: Op,
     // Dependencies
     deps: Vec<usize>,
+    side_effects: Vec<usize>,
     pub array: Option<Arc<array::Array>>,
     ty: VarType,
 }
@@ -151,6 +153,7 @@ impl Ir {
     fn new_var(&mut self, op: Op, dep: Vec<usize>, ty: VarType) -> usize {
         self.push_var(Var {
             deps: dep,
+            side_effects: Vec::new(),
             op,
             ty,
             array: None,
@@ -232,6 +235,7 @@ impl Ir {
             ty: VarType::Float32,
             op: Op::Binding,
             deps: vec![],
+            side_effects: vec![],
             array: Some(Arc::new(Array::from_slice(
                 &self.device,
                 data,
@@ -239,13 +243,20 @@ impl Ir {
             ))),
         })
     }
-    pub fn access(&mut self, src_id: usize, idx: usize) -> usize {
+    pub fn getattr(&mut self, src_id: usize, idx: usize) -> usize {
         let src = &self.vars[src_id];
         let ty = match src.ty {
             VarType::Struct(ref elems) => elems[idx].clone(),
             _ => unimplemented!(),
         };
-        self.new_var(Op::Access(idx), vec![src_id], ty)
+        self.new_var(Op::GetAttr(idx), vec![src_id], ty)
+    }
+    pub fn setattr(&mut self, dst_id: usize, src_id: usize, idx: usize) {
+        let src = &self.vars[src_id];
+        let ty = src.ty.clone();
+        let var = self.new_var(Op::SetAttr(idx), vec![src_id], src.ty.clone());
+        let dst = &mut self.vars[dst_id];
+        dst.side_effects.push(var);
     }
 }
 
@@ -423,8 +434,8 @@ impl Kernel {
                 self.set_num(num);
             }
             _ => {
-                for dep in var.deps.iter() {
-                    self.record_kernel_size(*dep, ir);
+                for id in var.deps.iter() {
+                    self.record_kernel_size(*id, ir);
                 }
             }
         };
@@ -442,8 +453,8 @@ impl Kernel {
                 self.record_binding(id, ir, access);
             }
             _ => {
-                for dep in var.deps.iter() {
-                    self.record_bindings(*dep, ir, access);
+                for id in var.deps.iter().chain(var.side_effects.iter()) {
+                    self.record_bindings(*id, ir, access);
                 }
             }
         };
@@ -456,7 +467,7 @@ impl Kernel {
             return self.op_results[&id];
         }
         let var = &ir.vars[id];
-        match var.op {
+        let ret = match var.op {
             Op::Const(c) => {
                 let ty = var.ty.to_spirv(&mut self.b);
                 let ret = match c {
@@ -491,7 +502,7 @@ impl Kernel {
                 self.op_results.insert(id, ret);
                 ret
             }
-            Op::Access(elem) => {
+            Op::GetAttr(elem) => {
                 //https://shader-playground.timjones.io/76ecd3898e50c0012918f6a080be6134
                 let ty = var.ty.to_spirv(&mut self.b);
                 let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
@@ -503,6 +514,7 @@ impl Kernel {
                 let ptr = self.b.access_chain(ptr_ty, None, src, vec![idx]).unwrap();
                 self.b.load(ty, None, ptr, None, None).unwrap()
             }
+            Op::SetAttr(elem) => 0, // TODO: Better return
             Op::StructInit => {
                 let ty = var.ty.to_spirv(&mut self.b);
                 let ty_ptr = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
@@ -540,10 +552,30 @@ impl Kernel {
                 ret
             }
             _ => unimplemented!(),
+        };
+        // Evaluate side effects like setattr
+        for id in var.side_effects.iter() {
+            let se_spv = self.record_ops(*id, ir);
+            let se = &ir.vars[*id];
+            match se.op {
+                Op::SetAttr(elem) => {
+                    let ty = se.ty.to_spirv(&mut self.b);
+                    let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
+                    let int_ty = self.b.type_int(32, 1);
+                    let idx = self.b.constant_u32(int_ty, elem as u32);
+
+                    let src = self.record_ops(se.deps[0], ir);
+
+                    let ptr = self.b.access_chain(ptr_ty, None, ret, vec![idx]).unwrap();
+                    self.b.store(ptr, src, None, None).unwrap();
+                }
+                _ => {}
+            }
         }
+        ret
     }
     ///
-    /// Record variables needed to store structs
+    /// Record variables needed to store structs/pointers
     ///
     pub fn record_spv_vars(&mut self, id: usize, ir: &Ir) {
         if self.vars.contains_key(&id) {
@@ -551,8 +583,8 @@ impl Kernel {
         }
         let var = &ir.vars[id];
 
-        for dep in var.deps.iter() {
-            self.record_spv_vars(*dep, ir);
+        for id in var.deps.iter().chain(var.side_effects.iter()) {
+            self.record_spv_vars(*id, ir);
         }
 
         let ty = var.ty.to_spirv(&mut self.b);
@@ -611,6 +643,7 @@ impl Kernel {
                 let device = ir.device.clone();
                 let id2 = ir.push_var(Var {
                     deps: vec![],
+                    side_effects: vec![],
                     op: Op::Binding,
                     array: Some(Arc::new(Array::create(
                         &device,
