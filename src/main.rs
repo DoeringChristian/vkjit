@@ -37,17 +37,17 @@ fn main() {
     //let z = i.add(z, x);
 
     let x = i.array_f32(&[0., 1., 2.]);
+    let y = i.array_f32(&[0.; 4]);
     let idx = i.arange(ir::VarType::UInt32, 3);
-    let y = i.gather(x, idx);
+    i.scatter(x, y, idx);
 
     let mut k = ir::Kernel::new();
-    let res = k.compile(&mut i, vec![y]);
+    let res = k.compile(&mut i, vec![x]);
 
     k.execute(&i, &sc13.device);
 
     println!("res={:#?}", res[0]);
-    let var = i.var(res[0]);
-    println!("{:#?}", var.array.as_ref().unwrap());
+    let var = i.var(y);
 
     let res = Buffer::mapped_slice(&var.array.as_ref().unwrap().buf);
     let res: &[f32] = cast_slice(res);

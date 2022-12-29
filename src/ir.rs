@@ -32,6 +32,7 @@ enum Op {
     SetAttr(usize),
     StructInit, // Structs are sotred as pointers and StructInit returns a pointer to a struct
     Gather,
+    Scatter,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -151,9 +152,9 @@ impl Ir {
     pub fn array(&self, id: usize) -> &Arc<array::Array> {
         self.vars[id].array.as_ref().unwrap()
     }
-    fn new_var(&mut self, op: Op, dep: Vec<usize>, ty: VarType) -> usize {
+    fn new_var(&mut self, op: Op, dependencies: Vec<usize>, ty: VarType) -> usize {
         self.push_var(Var {
-            deps: dep,
+            deps: dependencies,
             side_effects: Vec::new(),
             op,
             ty,
@@ -262,6 +263,11 @@ impl Ir {
     pub fn gather(&mut self, src_id: usize, idx_id: usize) -> usize {
         let src = &self.vars[src_id];
         self.new_var(Op::Gather, vec![src_id, idx_id], src.ty.clone())
+    }
+    pub fn scatter(&mut self, src_id: usize, dst_id: usize, idx_id: usize) {
+        let src = &self.vars[src_id];
+        let var = self.new_var(Op::Scatter, vec![dst_id, idx_id], src.ty.clone());
+        self.vars[src_id].side_effects.push(var);
     }
 }
 
@@ -372,7 +378,7 @@ impl Kernel {
 
         let var = &ir.vars[id];
 
-        self.set_num(var.array.as_ref().unwrap().count());
+        //self.set_num(var.array.as_ref().unwrap().count());
         // https://shader-playground.timjones.io/3af32078f879d8599902e46b919dbfe3
         let binding = self.binding(id, access);
         let ty_struct_ptr = self.record_array_struct_ty(&var.ty);
@@ -455,6 +461,9 @@ impl Kernel {
         let var = &ir.vars[id];
         match var.op {
             Op::Binding => {
+                for id in var.side_effects.iter() {
+                    self.record_bindings(*id, ir, access);
+                }
                 self.record_binding(id, ir, access);
             }
             _ => {
@@ -542,8 +551,9 @@ impl Kernel {
                 }
                 _ => panic!("Can only gather from buffer!"),
             },
+            Op::Scatter => 0, // TODO: better return
             Op::Arange(num) => {
-                self.set_num(num);
+                //self.set_num(num);
                 let ret = match var.ty {
                     VarType::UInt32 => self.idx.unwrap(),
                     VarType::Int32 => {
@@ -583,6 +593,15 @@ impl Kernel {
                     let ptr = self.b.access_chain(ptr_ty, None, ret, vec![idx]).unwrap();
                     self.b.store(ptr, src, None, None).unwrap();
                 }
+                Op::Scatter => match ir.vars[se.deps[0]].op {
+                    Op::Binding => {
+                        let ty = se.ty.to_spirv(&mut self.b);
+                        let idx = self.record_ops(se.deps[1], ir);
+                        let ptr = self.access_binding_at(se.deps[0], ir, idx);
+                        self.b.store(ptr, ret, None, None).unwrap();
+                    }
+                    _ => panic!("Cannot scatter into non buffer variable!"),
+                },
                 _ => {}
             }
         }
