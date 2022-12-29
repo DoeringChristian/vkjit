@@ -18,11 +18,17 @@ enum Const {
 }
 
 #[derive(Debug, Clone, Copy)]
+enum Bop {
+    Add,
+}
+
+#[derive(Debug, Clone, Copy)]
 enum Op {
     Binding,
-    Add,
+    Bop(Bop),
     Arange(usize),
     Const(Const),
+    Access(usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -86,6 +92,13 @@ impl VarType {
             VarType::UInt32 => b.type_int(32, 0),
             VarType::Int32 => b.type_int(32, 1),
             VarType::Float32 => b.type_float(32),
+            VarType::Struct(elems) => {
+                let elems = elems
+                    .iter()
+                    .map(|elem| elem.to_spirv(b))
+                    .collect::<Vec<_>>();
+                b.type_struct(elems)
+            }
             _ => unimplemented!(),
         }
     }
@@ -153,7 +166,7 @@ impl Ir {
         let lhs_ty = &self.vars[lhs].ty;
         let rhs_ty = &self.vars[rhs].ty;
         let ty = lhs_ty.max(rhs_ty);
-        self.new_var(Op::Add, vec![lhs, rhs], ty.clone())
+        self.new_var(Op::Bop(Bop::Add), vec![lhs, rhs], ty.clone())
     }
     pub fn arange(&mut self, ty: VarType, num: usize) -> usize {
         self.new_var(Op::Arange(num), vec![], ty)
@@ -205,6 +218,7 @@ pub struct Kernel {
     pub bindings: HashMap<usize, Binding>,
     pub arrays: HashMap<usize, u32>,
     pub array_structs: HashMap<VarType, u32>,
+    pub structs: HashMap<Vec<VarType>, u32>,
 
     // Variables used by many kernels
     pub idx: Option<u32>,
@@ -230,6 +244,7 @@ impl Kernel {
             bindings: HashMap::default(),
             arrays: HashMap::default(),
             array_structs: HashMap::default(),
+            structs: HashMap::default(),
             num: None,
             idx: None,
             global_invocation_id: None,
@@ -341,6 +356,9 @@ impl Kernel {
             self.num = Some(num);
         }
     }
+    ///
+    /// Traverse kernel and determine size. Panics if kernel size mismatches
+    ///
     fn record_kernel_size(&mut self, id: usize, ir: &Ir) {
         let var = &ir.vars[id];
         match var.op {
@@ -357,6 +375,9 @@ impl Kernel {
             }
         };
     }
+    ///
+    /// Records bindings before main function.
+    ///
     fn record_bindings(&mut self, id: usize, ir: &Ir, access: Access) {
         if self.arrays.contains_key(&id) {
             return;
@@ -373,6 +394,9 @@ impl Kernel {
             }
         };
     }
+    ///
+    /// Main record loop for recording variable operations.
+    ///
     fn record_var(&mut self, id: usize, ir: &Ir) -> u32 {
         if self.vars.contains_key(&id) {
             return self.vars[&id];
@@ -397,17 +421,33 @@ impl Kernel {
                 self.vars.insert(id, ret);
                 ret
             }
-            Op::Add => {
+            Op::Bop(bop) => {
                 let lhs = self.record_var(var.deps[0], ir);
                 let rhs = self.record_var(var.deps[0], ir);
                 let ty = var.ty.to_spirv(&mut self.b);
-                let ret = match var.ty {
-                    VarType::Int32 | VarType::UInt32 => self.b.i_add(ty, None, lhs, rhs).unwrap(),
-                    VarType::Float32 => self.b.f_add(ty, None, lhs, rhs).unwrap(),
-                    _ => panic!("Addition not defined for type {:?}", var.ty),
+                let ret = match bop {
+                    Bop::Add => match var.ty {
+                        VarType::Int32 | VarType::UInt32 => {
+                            self.b.i_add(ty, None, lhs, rhs).unwrap()
+                        }
+                        VarType::Float32 => self.b.f_add(ty, None, lhs, rhs).unwrap(),
+                        _ => panic!("Addition not defined for type {:?}", var.ty),
+                    },
                 };
                 self.vars.insert(id, ret);
                 ret
+            }
+            Op::Access(elem) => {
+                //https://shader-playground.timjones.io/76ecd3898e50c0012918f6a080be6134
+                let ty = var.ty.to_spirv(&mut self.b);
+                let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
+                let int_ty = self.b.type_int(32, 1);
+                let idx = self.b.constant_u32(int_ty, elem as u32);
+                let ptr = self
+                    .b
+                    .access_chain(ptr_ty, None, var.deps[0] as _, vec![idx])
+                    .unwrap();
+                self.b.load(ty, None, ptr, None, None).unwrap()
             }
             Op::Arange(num) => {
                 self.set_num(num);
@@ -449,7 +489,7 @@ impl Kernel {
             rspirv::spirv::MemoryModel::Simple,
         );
 
-        // global invocation id
+        // Setup default variables such as GlobalInvocationId
         let uint = self.b.type_int(32, 0);
         let v3uint = self.b.type_vector(uint, 3);
         let ptr_input_v3uint =
@@ -469,7 +509,8 @@ impl Kernel {
             )],
         );
 
-        // Record bindings before function
+        // Reocrd bindings.
+        // Bindings need to be prerecorded before main function.
         let schedule = schedule
             .iter()
             .map(|id1| {
@@ -514,8 +555,7 @@ impl Kernel {
             .execution_mode(main, spirv::ExecutionMode::LocalSize, vec![1, 1, 1]);
         self.b.begin_block(None).unwrap();
 
-        //self.record_idx(ir);
-        // Load x component of GlobalInvocationId
+        // Load x component of GlobalInvocationId as index.
         let uint_0 = self.b.constant_u32(uint, 0);
         let uint = self.b.type_int(32, 0);
         let ptr_input_uint = self.b.type_pointer(None, spirv::StorageClass::Input, uint);
@@ -537,6 +577,7 @@ impl Kernel {
             })
             .collect::<Vec<_>>();
 
+        // Write resulting variables
         let result = schedule
             .iter()
             .map(|(id2, spv_id)| {
