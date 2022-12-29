@@ -28,7 +28,6 @@ enum Op {
     Bop(Bop),
     Arange(usize),
     Const(Const),
-    Zero,
     Access(usize),
     StructInit, // Structs are sotred as pointers and StructInit returns a pointer to a struct
 }
@@ -174,8 +173,21 @@ impl Ir {
     pub fn arange(&mut self, ty: VarType, num: usize) -> usize {
         self.new_var(Op::Arange(num), vec![], ty)
     }
-    pub fn zero(&mut self, ty: VarType) -> usize {
-        self.new_var(Op::Zero, vec![], ty)
+    pub fn zeros(&mut self, ty: VarType) -> usize {
+        match ty {
+            VarType::Struct(elems) => {
+                let elems = elems
+                    .iter()
+                    .map(|elem| self.zeros(elem.clone()))
+                    .collect::<Vec<_>>();
+                self.struct_init(elems)
+            }
+            VarType::Bool => self.const_bool(false),
+            VarType::Int32 => self.const_i32(0),
+            VarType::UInt32 => self.const_u32(0),
+            VarType::Float32 => self.const_f32(0.),
+            _ => unimplemented!(),
+        }
     }
     pub fn struct_init(&mut self, vars: Vec<usize>) -> usize {
         let elems = vars
@@ -217,7 +229,6 @@ impl Ir {
             VarType::Struct(ref elems) => elems[idx].clone(),
             _ => unimplemented!(),
         };
-
         self.new_var(Op::Access(idx), vec![src_id], ty)
     }
 }
@@ -447,9 +458,6 @@ impl Kernel {
                 };
                 self.op_results.insert(id, ret);
                 ret
-            }
-            Op::Zero => {
-                unimplemented!()
             }
             Op::Bop(bop) => {
                 let lhs = self.record_ops(var.deps[0], ir);
