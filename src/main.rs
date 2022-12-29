@@ -33,7 +33,11 @@ fn main() {
     let y = i.array_f32(&[1., 2., 3.]);
     let st = i.struct_init(vec![x, y]);
 
+    let st = i.zeros(ir::VarType::Struct(vec![ir::VarType::Float32]));
+    let x = i.arange(ir::VarType::Float32, 3);
+
     let z = i.access(st, 0);
+    let z = i.add(z, x);
 
     //let x = i.arange(ir::VarType::Float32, 10);
     //let y = i.array_f32(&[1., 2., 3., 4., 5., 6., 7., 8., 9., 10.]);

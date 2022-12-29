@@ -189,6 +189,22 @@ impl Ir {
             _ => unimplemented!(),
         }
     }
+    pub fn ones(&mut self, ty: VarType) -> usize {
+        match ty {
+            VarType::Struct(elems) => {
+                let elems = elems
+                    .iter()
+                    .map(|elem| self.ones(elem.clone()))
+                    .collect::<Vec<_>>();
+                self.struct_init(elems)
+            }
+            VarType::Bool => self.const_bool(true),
+            VarType::Int32 => self.const_i32(1),
+            VarType::UInt32 => self.const_u32(1),
+            VarType::Float32 => self.const_f32(1.),
+            _ => unimplemented!(),
+        }
+    }
     pub fn struct_init(&mut self, vars: Vec<usize>) -> usize {
         let elems = vars
             .iter()
