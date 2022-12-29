@@ -210,6 +210,15 @@ impl Ir {
             ))),
         })
     }
+    pub fn access(&mut self, src_id: usize, idx: usize) -> usize {
+        let src = &self.vars[src_id];
+        let ty = match src.ty {
+            VarType::Struct(ref elems) => elems[idx].clone(),
+            _ => unimplemented!(),
+        };
+
+        self.new_var(Op::Access(idx), vec![src_id], ty)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -227,6 +236,7 @@ pub struct Binding {
 
 pub struct Kernel {
     pub b: rspirv::dr::Builder,
+    pub op_results: HashMap<usize, u32>,
     pub vars: HashMap<usize, u32>,
     pub num: Option<usize>,
 
@@ -242,7 +252,7 @@ pub struct Kernel {
 impl Debug for Kernel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Kernel")
-            .field("vars", &self.vars)
+            .field("vars", &self.op_results)
             .field("num", &self.num)
             .field("bindings", &self.bindings)
             .field("idx", &self.idx)
@@ -255,6 +265,7 @@ impl Kernel {
     pub fn new() -> Self {
         Self {
             b: rspirv::dr::Builder::new(),
+            op_results: HashMap::default(),
             vars: HashMap::default(),
             bindings: HashMap::default(),
             arrays: HashMap::default(),
@@ -412,9 +423,9 @@ impl Kernel {
     ///
     /// Main record loop for recording variable operations.
     ///
-    fn record_var(&mut self, id: usize, ir: &Ir) -> u32 {
-        if self.vars.contains_key(&id) {
-            return self.vars[&id];
+    fn record_ops(&mut self, id: usize, ir: &Ir) -> u32 {
+        if self.op_results.contains_key(&id) {
+            return self.op_results[&id];
         }
         let var = &ir.vars[id];
         match var.op {
@@ -433,15 +444,15 @@ impl Kernel {
                     Const::Float32(c) => self.b.constant_f32(ty, c),
                     _ => unimplemented!(),
                 };
-                self.vars.insert(id, ret);
+                self.op_results.insert(id, ret);
                 ret
             }
             Op::Zero => {
                 unimplemented!()
             }
             Op::Bop(bop) => {
-                let lhs = self.record_var(var.deps[0], ir);
-                let rhs = self.record_var(var.deps[0], ir);
+                let lhs = self.record_ops(var.deps[0], ir);
+                let rhs = self.record_ops(var.deps[1], ir);
                 let ty = var.ty.to_spirv(&mut self.b);
                 let ret = match bop {
                     Bop::Add => match var.ty {
@@ -452,7 +463,7 @@ impl Kernel {
                         _ => panic!("Addition not defined for type {:?}", var.ty),
                     },
                 };
-                self.vars.insert(id, ret);
+                self.op_results.insert(id, ret);
                 ret
             }
             Op::Access(elem) => {
@@ -461,20 +472,24 @@ impl Kernel {
                 let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
                 let int_ty = self.b.type_int(32, 1);
                 let idx = self.b.constant_u32(int_ty, elem as u32);
-                let ptr = self
-                    .b
-                    .access_chain(ptr_ty, None, var.deps[0] as _, vec![idx])
-                    .unwrap();
+
+                let src = self.record_ops(var.deps[0], ir);
+
+                let ptr = self.b.access_chain(ptr_ty, None, src, vec![idx]).unwrap();
                 self.b.load(ty, None, ptr, None, None).unwrap()
             }
             Op::StructInit => {
                 let ty = var.ty.to_spirv(&mut self.b);
+                let ty_ptr = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
                 let deps = var
                     .deps
                     .iter()
-                    .map(|dep| self.record_var(*dep, ir))
+                    .map(|dep| self.record_ops(*dep, ir))
                     .collect::<Vec<_>>();
-                self.b.composite_construct(ty, None, deps).unwrap()
+                let object = self.b.composite_construct(ty, None, deps).unwrap();
+                let ptr = self.vars[&id];
+                self.b.store(ptr, object, None, None).unwrap();
+                ptr
             }
             Op::Arange(num) => {
                 self.set_num(num);
@@ -490,7 +505,7 @@ impl Kernel {
                     }
                     _ => unimplemented!(),
                 };
-                self.vars.insert(id, ret);
+                self.op_results.insert(id, ret);
                 ret
             }
             Op::Binding => {
@@ -501,6 +516,32 @@ impl Kernel {
             }
             _ => unimplemented!(),
         }
+    }
+    ///
+    /// Record variables needed to store structs
+    ///
+    pub fn record_spv_vars(&mut self, id: usize, ir: &Ir) {
+        if self.vars.contains_key(&id) {
+            return;
+        }
+        let var = &ir.vars[id];
+
+        for dep in var.deps.iter() {
+            self.record_spv_vars(*dep, ir);
+        }
+
+        let ty = var.ty.to_spirv(&mut self.b);
+        let ty_ptr = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
+
+        match var.op {
+            Op::StructInit => {
+                let var = self
+                    .b
+                    .variable(ty_ptr, None, spirv::StorageClass::Function, None);
+                self.vars.insert(id, var);
+            }
+            _ => {}
+        };
     }
     pub fn compile(&mut self, ir: &mut Ir, schedule: Vec<usize>) -> Vec<usize> {
         // Determine kernel size
@@ -582,9 +623,13 @@ impl Kernel {
             .execution_mode(main, spirv::ExecutionMode::LocalSize, vec![1, 1, 1]);
         self.b.begin_block(None).unwrap();
 
+        for id in schedule.iter() {
+            self.record_spv_vars(id.0, ir);
+        }
+
         // Load x component of GlobalInvocationId as index.
-        let uint_0 = self.b.constant_u32(uint, 0);
         let uint = self.b.type_int(32, 0);
+        let uint_0 = self.b.constant_u32(uint, 0);
         let ptr_input_uint = self.b.type_pointer(None, spirv::StorageClass::Input, uint);
         let ptr = self
             .b
@@ -599,7 +644,7 @@ impl Kernel {
         let schedule = schedule
             .iter()
             .map(|(id1, id2)| {
-                let spv_id = self.record_var(*id1, ir);
+                let spv_id = self.record_ops(*id1, ir);
                 (*id2, spv_id)
             })
             .collect::<Vec<_>>();
