@@ -34,6 +34,7 @@ enum Op {
     StructInit, // Structs are sotred as pointers and StructInit returns a pointer to a struct
     Gather,
     Scatter,
+    Select,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -175,6 +176,12 @@ impl Ir {
         let rhs_ty = &self.vars[rhs].ty;
         let ty = lhs_ty.max(rhs_ty);
         self.new_var(Op::Bop(Bop::Add), vec![lhs, rhs], ty.clone())
+    }
+    pub fn select(&mut self, lhs: usize, rhs: usize, cond_id: usize) -> usize {
+        let lhs_ty = &self.vars[lhs].ty;
+        let rhs_ty = &self.vars[rhs].ty;
+        assert!(lhs_ty == rhs_ty);
+        self.new_var(Op::Select, vec![lhs, rhs], lhs_ty.clone())
     }
     pub fn arange(&mut self, ty: VarType, num: usize) -> usize {
         self.new_var(Op::Arange(num), vec![], ty)
