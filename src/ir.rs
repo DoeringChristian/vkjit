@@ -196,11 +196,11 @@ impl Ir {
         let ty = VarType::Bool;
         self.new_var(Op::Bop(Bop::Lt), vec![lhs, rhs], ty.clone())
     }
-    pub fn select(&mut self, lhs: usize, rhs: usize, cond_id: usize) -> usize {
-        let lhs_ty = &self.vars[lhs].ty;
-        let rhs_ty = &self.vars[rhs].ty;
+    pub fn select(&mut self, cond_id: usize, lhs_id: usize, rhs_id: usize) -> usize {
+        let lhs_ty = &self.vars[lhs_id].ty;
+        let rhs_ty = &self.vars[rhs_id].ty;
         assert!(lhs_ty == rhs_ty);
-        self.new_var(Op::Select, vec![lhs, rhs], lhs_ty.clone())
+        self.new_var(Op::Select, vec![cond_id, lhs_id, rhs_id], lhs_ty.clone())
     }
     pub fn arange(&mut self, ty: VarType, num: usize) -> usize {
         self.new_var(Op::Arange(num), vec![], ty)
@@ -531,7 +531,7 @@ impl Kernel {
             }
         };
     }
-    fn record_conditional<F>(&mut self, conditional_id: u32, mut f: F)
+    fn record_if<F>(&mut self, conditional_id: u32, mut f: F)
     where
         F: FnMut(&mut Self),
     {
@@ -561,6 +561,47 @@ impl Kernel {
         self.b.begin_block(Some(true_label_id)).unwrap();
 
         f(self);
+
+        self.b.branch(end_label_id).unwrap();
+        self.b.begin_block(Some(end_label_id)).unwrap();
+    }
+    fn record_ifelse<F, E>(&mut self, conditional_id: u32, mut f: F, mut e: E)
+    where
+        F: FnMut(&mut Self),
+        E: FnMut(&mut Self),
+    {
+        let true_label_id = self.b.id();
+        let false_label_id = self.b.id();
+        let end_label_id = self.b.id();
+
+        // According to spirv OpSelectionMerge should be second to last
+        // instruction in block. Rspirv however ends block with
+        // selection_merge. Therefore, we insert the instruction by hand.
+        self.b
+            .insert_into_block(
+                rspirv::dr::InsertPoint::End,
+                rspirv::dr::Instruction::new(
+                    spirv::Op::SelectionMerge,
+                    None,
+                    None,
+                    vec![
+                        rspirv::dr::Operand::IdRef(end_label_id),
+                        rspirv::dr::Operand::SelectionControl(spirv::SelectionControl::NONE),
+                    ],
+                ),
+            )
+            .unwrap();
+        self.b
+            .branch_conditional(conditional_id, true_label_id, false_label_id, None)
+            .unwrap();
+        self.b.begin_block(Some(true_label_id)).unwrap();
+
+        f(self);
+
+        self.b.branch(end_label_id).unwrap();
+        self.b.begin_block(Some(false_label_id)).unwrap();
+
+        e(self);
 
         self.b.branch(end_label_id).unwrap();
         self.b.begin_block(Some(end_label_id)).unwrap();
@@ -676,6 +717,23 @@ impl Kernel {
                 let ret = self.b.load(ty, None, ptr, None, None).unwrap();
                 ret
             }
+            Op::Select => {
+                let ty = var.ty.to_spirv(&mut self.b);
+                let cond_id = self.record_ops(var.deps[0], ir);
+                let lhs_id = self.record_ops(var.deps[1], ir);
+                let rhs_id = self.record_ops(var.deps[2], ir);
+                let ptr = self.vars[&id];
+                self.record_ifelse(
+                    cond_id,
+                    |s| {
+                        s.b.store(ptr, lhs_id, None, None).unwrap();
+                    },
+                    |s| {
+                        s.b.store(ptr, rhs_id, None, None).unwrap();
+                    },
+                );
+                self.b.load(ty, None, ptr, None, None).unwrap()
+            }
             _ => unimplemented!(),
         };
         // Evaluate side effects like setattr
@@ -702,7 +760,7 @@ impl Kernel {
 
                         if se.deps.len() >= 3 {
                             let condition_id = self.record_ops(se.deps[2], ir);
-                            self.record_conditional(condition_id, |s| {
+                            self.record_if(condition_id, |s| {
                                 s.b.store(ptr, ret, None, None).unwrap();
                             });
                         } else {
@@ -717,7 +775,7 @@ impl Kernel {
         ret
     }
     ///
-    /// Record variables needed to store structs/pointers
+    /// Record variables needed to store structs and variables for select.
     ///
     pub fn record_spv_vars(&mut self, id: usize, ir: &Ir) {
         if self.vars.contains_key(&id) {
@@ -733,7 +791,7 @@ impl Kernel {
         let ty_ptr = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
 
         match var.op {
-            Op::StructInit => {
+            Op::StructInit | Op::Select => {
                 let var = self
                     .b
                     .variable(ty_ptr, None, spirv::StorageClass::Function, None);

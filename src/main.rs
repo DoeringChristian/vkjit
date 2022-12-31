@@ -37,18 +37,18 @@ fn main() {
     //let z = i.add(z, x);
 
     let x = i.array_f32(&[0., 1., 2., 3.]);
-    let y = i.array_f32(&[0.; 4]);
+    let y = i.array_f32(&[5.; 4]);
     let idx = i.arange(ir::VarType::UInt32, 4);
 
     let c2 = i.const_u32(2);
     let c = i.lt(idx, c2);
 
-    i.scatter(x, y, idx, Some(c));
+    let z = i.select(c, x, y);
 
     let mut k = ir::Kernel::new();
-    let res = k.compile(&mut i, vec![x]);
+    let res = k.compile(&mut i, vec![z]);
 
     k.execute(&i, &sc13.device);
 
-    i.print_buffer(y);
+    i.print_buffer(res[0]);
 }
