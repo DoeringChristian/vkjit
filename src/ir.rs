@@ -531,6 +531,40 @@ impl Kernel {
             }
         };
     }
+    fn record_conditional<F>(&mut self, conditional_id: u32, mut f: F)
+    where
+        F: FnMut(&mut Self),
+    {
+        let true_label_id = self.b.id();
+        let end_label_id = self.b.id();
+
+        // According to spirv OpSelectionMerge should be second to last
+        // instruction in block. Rspirv however ends block with
+        // selection_merge. Therefore, we insert the instruction by hand.
+        self.b
+            .insert_into_block(
+                rspirv::dr::InsertPoint::End,
+                rspirv::dr::Instruction::new(
+                    spirv::Op::SelectionMerge,
+                    None,
+                    None,
+                    vec![
+                        rspirv::dr::Operand::IdRef(end_label_id),
+                        rspirv::dr::Operand::SelectionControl(spirv::SelectionControl::NONE),
+                    ],
+                ),
+            )
+            .unwrap();
+        self.b
+            .branch_conditional(conditional_id, true_label_id, end_label_id, None)
+            .unwrap();
+        self.b.begin_block(Some(true_label_id)).unwrap();
+
+        f(self);
+
+        self.b.branch(end_label_id).unwrap();
+        self.b.begin_block(Some(end_label_id)).unwrap();
+    }
     ///
     /// Main record loop for recording variable operations.
     ///
@@ -667,35 +701,10 @@ impl Kernel {
                         let ptr = self.access_binding_at(se.deps[0], ir, idx);
 
                         if se.deps.len() >= 3 {
-                            let true_label_id = self.b.id();
-                            let end_label_id = self.b.id();
                             let condition_id = self.record_ops(se.deps[2], ir);
-                            // According to spirv OpSelectionMerge should be second to last
-                            // instruction in block. Rspirv however ends block with
-                            // selection_merge. Therefore, we insert the instruction by hand.
-                            self.b
-                                .insert_into_block(
-                                    rspirv::dr::InsertPoint::End,
-                                    rspirv::dr::Instruction::new(
-                                        spirv::Op::SelectionMerge,
-                                        None,
-                                        None,
-                                        vec![
-                                            rspirv::dr::Operand::IdRef(end_label_id),
-                                            rspirv::dr::Operand::SelectionControl(
-                                                spirv::SelectionControl::NONE,
-                                            ),
-                                        ],
-                                    ),
-                                )
-                                .unwrap();
-                            self.b
-                                .branch_conditional(condition_id, true_label_id, end_label_id, None)
-                                .unwrap();
-                            self.b.begin_block(Some(true_label_id)).unwrap();
-                            self.b.store(ptr, ret, None, None).unwrap();
-                            self.b.branch(end_label_id).unwrap();
-                            self.b.begin_block(Some(end_label_id)).unwrap();
+                            self.record_conditional(condition_id, |s| {
+                                s.b.store(ptr, ret, None, None).unwrap();
+                            });
                         } else {
                             self.b.store(ptr, ret, None, None).unwrap();
                         }
