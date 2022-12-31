@@ -22,8 +22,15 @@ enum Const {
 #[derive(Debug, Clone, Copy)]
 enum Bop {
     Add,
+    Sub,
+    Mul,
+    Div,
     Lt,
+    Gt,
     Eq,
+    Leq,
+    Geq,
+    Neq,
 }
 
 impl Bop {
@@ -151,6 +158,12 @@ pub struct Var {
     ty: VarType,
 }
 
+#[derive(Debug)]
+pub struct Ir {
+    device: Arc<screen_13::driver::Device>,
+    vars: Vec<Var>,
+}
+
 macro_rules! bop {
     ($bop:ident) => {
         paste! {
@@ -163,12 +176,6 @@ macro_rules! bop {
         }
         }
     };
-}
-
-#[derive(Debug)]
-pub struct Ir {
-    device: Arc<screen_13::driver::Device>,
-    vars: Vec<Var>,
 }
 impl Ir {
     pub fn new(device: &Arc<screen_13::driver::Device>) -> Self {
@@ -197,15 +204,19 @@ impl Ir {
     pub fn var(&self, id: usize) -> &Var {
         &self.vars[id]
     }
-    pub fn add(&mut self, lhs: usize, rhs: usize) -> usize {
-        let lhs_ty = &self.vars[lhs].ty;
-        let rhs_ty = &self.vars[rhs].ty;
-        let bop = Bop::Add;
-        let ty = bop.eval_ty(lhs_ty, rhs_ty);
-        self.new_var(Op::Bop(bop), vec![lhs, rhs], ty.clone())
-    }
-    bop!(Eq);
+
+    // Implement binary operations using bop macro
+    bop!(Add);
+    bop!(Sub);
+    bop!(Mul);
+    bop!(Div);
     bop!(Lt);
+    bop!(Gt);
+    bop!(Eq);
+    bop!(Leq);
+    bop!(Geq);
+    bop!(Neq);
+
     pub fn select(&mut self, cond_id: usize, lhs_id: usize, rhs_id: usize) -> usize {
         let lhs_ty = &self.vars[lhs_id].ty;
         let rhs_ty = &self.vars[rhs_id].ty;
