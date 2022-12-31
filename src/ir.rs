@@ -674,6 +674,42 @@ impl Kernel {
                         VarType::UInt32 => self.b.u_less_than(ty, None, lhs, rhs).unwrap(),
                         _ => unimplemented!(),
                     },
+                    Bop::Gt => match lhs_ty {
+                        VarType::Float32 => self.b.f_ord_greater_than(ty, None, lhs, rhs).unwrap(),
+                        VarType::Int32 => self.b.s_greater_than(ty, None, lhs, rhs).unwrap(),
+                        VarType::UInt32 => self.b.u_greater_than(ty, None, lhs, rhs).unwrap(),
+                        _ => unimplemented!(),
+                    },
+                    Bop::Eq => match lhs_ty {
+                        VarType::Float32 => self.b.f_ord_equal(ty, None, lhs, rhs).unwrap(),
+                        VarType::Int32 | VarType::UInt32 => {
+                            self.b.i_equal(ty, None, lhs, rhs).unwrap()
+                        }
+                        _ => unimplemented!(),
+                    },
+                    Bop::Leq => match lhs_ty {
+                        VarType::Float32 => {
+                            self.b.f_ord_less_than_equal(ty, None, lhs, rhs).unwrap()
+                        }
+                        VarType::Int32 => self.b.s_less_than_equal(ty, None, lhs, rhs).unwrap(),
+                        VarType::UInt32 => self.b.u_less_than_equal(ty, None, lhs, rhs).unwrap(),
+                        _ => unimplemented!(),
+                    },
+                    Bop::Geq => match lhs_ty {
+                        VarType::Float32 => {
+                            self.b.f_ord_greater_than_equal(ty, None, lhs, rhs).unwrap()
+                        }
+                        VarType::Int32 => self.b.s_greater_than_equal(ty, None, lhs, rhs).unwrap(),
+                        VarType::UInt32 => self.b.u_greater_than_equal(ty, None, lhs, rhs).unwrap(),
+                        _ => unimplemented!(),
+                    },
+                    Bop::Neq => match lhs_ty {
+                        VarType::Float32 => self.b.f_ord_not_equal(ty, None, lhs, rhs).unwrap(),
+                        VarType::Int32 | VarType::UInt32 => {
+                            self.b.i_not_equal(ty, None, lhs, rhs).unwrap()
+                        }
+                        _ => unimplemented!(),
+                    },
                     _ => unimplemented!(),
                 };
                 self.op_results.insert(id, ret);
