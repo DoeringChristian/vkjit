@@ -21,6 +21,17 @@ enum Const {
 #[derive(Debug, Clone, Copy)]
 enum Bop {
     Add,
+    Lt,
+    Eq,
+}
+
+impl Bop {
+    fn eval_ty<'a>(self, lhs: &'a VarType, rhs: &'a VarType) -> &'a VarType {
+        match self {
+            Self::Add => lhs.max(rhs),
+            _ => unimplemented!(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -174,8 +185,16 @@ impl Ir {
     pub fn add(&mut self, lhs: usize, rhs: usize) -> usize {
         let lhs_ty = &self.vars[lhs].ty;
         let rhs_ty = &self.vars[rhs].ty;
-        let ty = lhs_ty.max(rhs_ty);
-        self.new_var(Op::Bop(Bop::Add), vec![lhs, rhs], ty.clone())
+        let bop = Bop::Add;
+        let ty = bop.eval_ty(lhs_ty, rhs_ty);
+        self.new_var(Op::Bop(bop), vec![lhs, rhs], ty.clone())
+    }
+    pub fn lt(&mut self, lhs: usize, rhs: usize) -> usize {
+        let lhs_ty = &self.vars[lhs].ty;
+        let rhs_ty = &self.vars[rhs].ty;
+        assert!(lhs_ty == rhs_ty);
+        let ty = VarType::Bool;
+        self.new_var(Op::Bop(Bop::Lt), vec![lhs, rhs], ty.clone())
     }
     pub fn select(&mut self, lhs: usize, rhs: usize, cond_id: usize) -> usize {
         let lhs_ty = &self.vars[lhs].ty;
@@ -272,9 +291,20 @@ impl Ir {
         let src = &self.vars[src_id];
         self.new_var(Op::Gather, vec![src_id, idx_id], src.ty.clone())
     }
-    pub fn scatter(&mut self, src_id: usize, dst_id: usize, idx_id: usize) {
+    pub fn scatter(
+        &mut self,
+        src_id: usize,
+        dst_id: usize,
+        idx_id: usize,
+        active_id: Option<usize>,
+    ) {
         let src = &self.vars[src_id];
-        let var = self.new_var(Op::Scatter, vec![dst_id, idx_id], src.ty.clone());
+        let mut deps = vec![dst_id, idx_id];
+        active_id.and_then(|id| {
+            deps.push(id);
+            Some(())
+        });
+        let var = self.new_var(Op::Scatter, deps, src.ty.clone());
         self.vars[src_id].side_effects.push(var);
     }
     pub fn print_buffer(&self, id: usize) {
@@ -529,6 +559,8 @@ impl Kernel {
                 ret
             }
             Op::Bop(bop) => {
+                let lhs_ty = &ir.vars[var.deps[0]].ty;
+                let rhs_ty = &ir.vars[var.deps[1]].ty;
                 let lhs = self.record_ops(var.deps[0], ir);
                 let rhs = self.record_ops(var.deps[1], ir);
                 let ty = var.ty.to_spirv(&mut self.b);
@@ -540,6 +572,13 @@ impl Kernel {
                         VarType::Float32 => self.b.f_add(ty, None, lhs, rhs).unwrap(),
                         _ => panic!("Addition not defined for type {:?}", var.ty),
                     },
+                    Bop::Lt => match lhs_ty {
+                        VarType::Float32 => self.b.f_ord_less_than(ty, None, lhs, rhs).unwrap(),
+                        VarType::Int32 => self.b.s_less_than(ty, None, lhs, rhs).unwrap(),
+                        VarType::UInt32 => self.b.u_less_than(ty, None, lhs, rhs).unwrap(),
+                        _ => unimplemented!(),
+                    },
+                    _ => unimplemented!(),
                 };
                 self.op_results.insert(id, ret);
                 ret
@@ -626,7 +665,40 @@ impl Kernel {
                         let ty = se.ty.to_spirv(&mut self.b);
                         let idx = self.record_ops(se.deps[1], ir);
                         let ptr = self.access_binding_at(se.deps[0], ir, idx);
-                        self.b.store(ptr, ret, None, None).unwrap();
+
+                        if se.deps.len() >= 3 {
+                            let true_label_id = self.b.id();
+                            let end_label_id = self.b.id();
+                            let condition_id = self.record_ops(se.deps[2], ir);
+                            // According to spirv OpSelectionMerge should be second to last
+                            // instruction in block. Rspirv however ends block with
+                            // selection_merge. Therefore, we insert the instruction by hand.
+                            self.b
+                                .insert_into_block(
+                                    rspirv::dr::InsertPoint::End,
+                                    rspirv::dr::Instruction::new(
+                                        spirv::Op::SelectionMerge,
+                                        None,
+                                        None,
+                                        vec![
+                                            rspirv::dr::Operand::IdRef(end_label_id),
+                                            rspirv::dr::Operand::SelectionControl(
+                                                spirv::SelectionControl::NONE,
+                                            ),
+                                        ],
+                                    ),
+                                )
+                                .unwrap();
+                            self.b
+                                .branch_conditional(condition_id, true_label_id, end_label_id, None)
+                                .unwrap();
+                            self.b.begin_block(Some(true_label_id)).unwrap();
+                            self.b.store(ptr, ret, None, None).unwrap();
+                            self.b.branch(end_label_id).unwrap();
+                            self.b.begin_block(Some(end_label_id)).unwrap();
+                        } else {
+                            self.b.store(ptr, ret, None, None).unwrap();
+                        }
                     }
                     _ => panic!("Cannot scatter into non buffer variable!"),
                 },
