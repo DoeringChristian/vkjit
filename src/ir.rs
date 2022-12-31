@@ -1,4 +1,5 @@
 use bytemuck::cast_slice;
+use paste::paste;
 use rspirv::binary::{Assemble, Disassemble};
 use rspirv::spirv;
 use screen_13::prelude::{vk, ComputePipeline, LazyPool, RenderGraph};
@@ -150,6 +151,20 @@ pub struct Var {
     ty: VarType,
 }
 
+macro_rules! bop {
+    ($bop:ident) => {
+        paste! {
+        pub fn [<$bop:lower>](&mut self, lhs: usize, rhs: usize) -> usize {
+            let lhs_ty = &self.vars[lhs].ty;
+            let rhs_ty = &self.vars[rhs].ty;
+            assert!(lhs_ty == rhs_ty);
+            let ty = VarType::Bool;
+            self.new_var(Op::Bop(Bop::$bop), vec![lhs, rhs], ty.clone())
+        }
+        }
+    };
+}
+
 #[derive(Debug)]
 pub struct Ir {
     device: Arc<screen_13::driver::Device>,
@@ -189,13 +204,8 @@ impl Ir {
         let ty = bop.eval_ty(lhs_ty, rhs_ty);
         self.new_var(Op::Bop(bop), vec![lhs, rhs], ty.clone())
     }
-    pub fn lt(&mut self, lhs: usize, rhs: usize) -> usize {
-        let lhs_ty = &self.vars[lhs].ty;
-        let rhs_ty = &self.vars[rhs].ty;
-        assert!(lhs_ty == rhs_ty);
-        let ty = VarType::Bool;
-        self.new_var(Op::Bop(Bop::Lt), vec![lhs, rhs], ty.clone())
-    }
+    bop!(Eq);
+    bop!(Lt);
     pub fn select(&mut self, cond_id: usize, lhs_id: usize, rhs_id: usize) -> usize {
         let lhs_ty = &self.vars[lhs_id].ty;
         let rhs_ty = &self.vars[rhs_id].ty;
