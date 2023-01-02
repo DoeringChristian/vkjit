@@ -4,7 +4,7 @@ use rspirv::binary::{Assemble, Disassemble};
 use rspirv::spirv;
 use screen_13::prelude::{vk, ComputePipeline, LazyPool, RenderGraph};
 use std::any::TypeId;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -161,8 +161,13 @@ impl From<VarType> for rspirv::sr::Type {
     }
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct VarId(usize);
+impl Debug for VarId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl Deref for VarId {
     type Target = usize;
@@ -487,6 +492,8 @@ pub struct Kernel {
     // Variables used by many kernels
     pub idx: Option<u32>,
     pub global_invocation_id: Option<u32>,
+
+    pub traversal_set: HashSet<VarId>,
 }
 impl Debug for Kernel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -513,6 +520,7 @@ impl Kernel {
             num: None,
             idx: None,
             global_invocation_id: None,
+            traversal_set: HashSet::default(),
         }
     }
     fn binding(&mut self, id: VarId, access: Access) -> Binding {
@@ -646,16 +654,17 @@ impl Kernel {
     /// Records bindings before main function.
     ///
     fn record_bindings(&mut self, id: VarId, ir: &Ir, access: Access) {
-        if self.arrays.contains_key(&id) {
+        if self.arrays.contains_key(&id) | self.traversal_set.contains(&id) {
             return;
         }
+        self.traversal_set.insert(id);
         //println!("{:?}", id);
         let var = &ir.var(id);
         match var.op {
             Op::Binding => {
-                //for id in var.side_effects.iter() {
-                //self.record_bindings(*id, ir, access);
-                //}
+                for id in var.side_effects.iter() {
+                    self.record_bindings(*id, ir, access);
+                }
                 self.record_binding(id, ir, access);
             }
             _ => {
@@ -952,6 +961,7 @@ impl Kernel {
             }
             _ => unimplemented!(),
         };
+        self.op_results.insert(id, ret);
         // Evaluate side effects like setattr
         for id in var.side_effects.iter() {
             let se_spv = self.record_ops(*id, ir);
@@ -988,26 +998,20 @@ impl Kernel {
                 _ => {}
             }
         }
-        self.op_results.insert(id, ret);
         ret
     }
     ///
     /// Record variables needed to store structs and variables for select.
     ///
     pub fn record_spv_vars(&mut self, id: VarId, ir: &Ir) {
-        if self.vars.contains_key(&id) {
+        if self.vars.contains_key(&id) | self.traversal_set.contains(&id) {
             return;
         }
+        self.traversal_set.insert(id);
         let var = &ir.var(id);
 
-        for id in var.deps.iter() {
+        for id in var.deps.iter().chain(var.side_effects.iter()) {
             self.record_spv_vars(*id, ir);
-        }
-        for id in var.side_effects.iter() {
-            match ir.var(*id).op {
-                Op::Binding => {}
-                _ => self.record_spv_vars(*id, ir),
-            }
         }
 
         let ty = var.ty.to_spirv(&mut self.b);
@@ -1080,8 +1084,10 @@ impl Kernel {
                     ),
                 );
                 // Record binding for all bound variables.
+                self.traversal_set.clear();
                 self.record_bindings(*id1, ir, Access::Read);
                 // Rcord bindings for result variables.
+                self.traversal_set.clear();
                 self.record_bindings(id2, ir, Access::Write);
                 (*id1, id2)
             })
@@ -1106,6 +1112,7 @@ impl Kernel {
             .execution_mode(main, spirv::ExecutionMode::LocalSize, vec![1, 1, 1]);
         self.b.begin_block(None).unwrap();
 
+        self.traversal_set.clear();
         for id in schedule.iter() {
             self.record_spv_vars(id.0, ir);
         }
@@ -1132,6 +1139,7 @@ impl Kernel {
             })
             .collect::<Vec<_>>();
 
+        println!("test");
         // Write resulting variables
         let result = schedule
             .iter()
