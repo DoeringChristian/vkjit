@@ -207,11 +207,11 @@ impl Ir {
         }
     }
     pub fn new_sc13() -> Self {
-        let cfg = DriverConfig::new().build();
-        let device = Arc::new(Device::new(cfg).unwrap());
+        let cfg = screen_13::prelude::DriverConfig::new().build();
+        let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
         Self {
             backend: Backend {
-                device: device.clone(),
+                device,
                 arrays: HashMap::default(),
             },
             vars: Vec::default(),
