@@ -6,7 +6,7 @@ mod test {
     use screen_13::prelude::*;
 
     #[test]
-    fn test_add() {
+    fn test_add_f32() {
         let mut ir = Ir::new();
 
         let x = ir.arange(VarType::Float32, 3);
@@ -17,5 +17,71 @@ mod test {
         let res = ir.eval(vec![z]);
 
         assert_eq!(ir.as_slice::<f32>(res[0]), &[0., 2., 4.]);
+    }
+    #[test]
+    fn test_add_u32() {
+        let mut ir = Ir::new();
+
+        let x = ir.arange(VarType::UInt32, 3);
+        let y = ir.arange(VarType::UInt32, 3);
+
+        let z = ir.add(x, y);
+
+        let res = ir.eval(vec![z]);
+
+        assert_eq!(ir.as_slice::<u32>(res[0]), &[0, 2, 4]);
+    }
+    #[test]
+    fn test_add_i32() {
+        let mut ir = Ir::new();
+
+        let x = ir.arange(VarType::Int32, 3);
+        let y = ir.arange(VarType::Int32, 3);
+
+        let z = ir.add(x, y);
+
+        let res = ir.eval(vec![z]);
+
+        assert_eq!(ir.as_slice::<i32>(res[0]), &[0, 2, 4]);
+    }
+
+    #[test]
+    fn test_sub_f32() {
+        let mut ir = Ir::new();
+
+        let x = ir.array_f32(&[1., 2., 3.]);
+        let y = ir.array_f32(&[0., 1., 2.]);
+
+        let z = ir.sub(x, y);
+
+        let res = ir.eval(vec![z]);
+
+        assert_eq!(ir.as_slice::<f32>(res[0]), &[1., 1., 1.]);
+    }
+    #[test]
+    fn test_sub_u32() {
+        let mut ir = Ir::new();
+
+        let x = ir.array_u32(&[1, 2, 3]);
+        let y = ir.array_u32(&[0, 1, 2]);
+
+        let z = ir.sub(x, y);
+
+        let res = ir.eval(vec![z]);
+
+        assert_eq!(ir.as_slice::<u32>(res[0]), &[1, 1, 1]);
+    }
+    #[test]
+    fn test_sub_i32() {
+        let mut ir = Ir::new();
+
+        let x = ir.array_i32(&[0, 1, 2]);
+        let y = ir.array_i32(&[1, 2, 3]);
+
+        let z = ir.sub(x, y);
+
+        let res = ir.eval(vec![z]);
+
+        assert_eq!(ir.as_slice::<i32>(res[0]), &[-1, -1, -1]);
     }
 }

@@ -329,6 +329,40 @@ impl Ir {
         );
         id
     }
+    pub fn array_i32(&mut self, data: &[i32]) -> usize {
+        let id = self.push_var(Var {
+            ty: VarType::Int32,
+            op: Op::Binding,
+            deps: vec![],
+            side_effects: vec![],
+        });
+        self.backend.arrays.insert(
+            id,
+            Array::from_slice(
+                &self.backend.device,
+                data,
+                vk::BufferUsageFlags::STORAGE_BUFFER,
+            ),
+        );
+        id
+    }
+    pub fn array_u32(&mut self, data: &[u32]) -> usize {
+        let id = self.push_var(Var {
+            ty: VarType::UInt32,
+            op: Op::Binding,
+            deps: vec![],
+            side_effects: vec![],
+        });
+        self.backend.arrays.insert(
+            id,
+            Array::from_slice(
+                &self.backend.device,
+                data,
+                vk::BufferUsageFlags::STORAGE_BUFFER,
+            ),
+        );
+        id
+    }
     pub fn getattr(&mut self, src_id: usize, idx: usize) -> usize {
         let src = &self.vars[src_id];
         let ty = match src.ty {
