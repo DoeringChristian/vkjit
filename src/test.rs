@@ -84,4 +84,38 @@ mod test {
 
         assert_eq!(ir.as_slice::<i32>(res[0]), &[-1, -1, -1]);
     }
+
+    #[test]
+    fn test_scatter_f32() {
+        let mut ir = Ir::new();
+
+        let idx = ir.arange(VarType::UInt32, 3);
+        let x = ir.array_f32(&[0., 1., 2.]);
+
+        let y = ir.array_f32(&[0., 0., 0.]);
+
+        ir.scatter(x, y, idx, None);
+
+        ir.eval(vec![x]);
+
+        assert_eq!(ir.as_slice::<f32>(y), &[0., 1., 2.]);
+    }
+    #[test]
+    fn test_scatter_conditional() {
+        let mut ir = Ir::new();
+
+        let idx = ir.arange(VarType::UInt32, 3);
+        let x = ir.array_f32(&[0., 1., 2., 3., 4.]);
+
+        let y = ir.array_f32(&[0., 0., 0., 0., 0.]);
+
+        let const3 = ir.const_u32(3);
+        let cond = ir.lt(idx, const3);
+
+        ir.scatter(x, y, idx, Some(cond));
+
+        ir.eval(vec![x]);
+
+        assert_eq!(ir.as_slice::<f32>(y), &[0., 1., 2., 0., 0.]);
+    }
 }
