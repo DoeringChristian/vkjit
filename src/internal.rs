@@ -6,6 +6,7 @@ use screen_13::prelude::{vk, ComputePipeline, LazyPool, RenderGraph};
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::ops::Deref;
 use std::sync::Arc;
 
 use crevice::std140::{self, AsStd140};
@@ -159,12 +160,23 @@ impl From<VarType> for rspirv::sr::Type {
     }
 }
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct VarId(usize);
+
+impl Deref for VarId {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Var {
     op: Op,
     // Dependencies
-    deps: Vec<usize>,
-    side_effects: Vec<usize>,
+    deps: Vec<VarId>,
+    side_effects: Vec<VarId>,
     //pub array: Option<Arc<array::Array>>,
     ty: VarType,
 }
@@ -172,7 +184,7 @@ pub struct Var {
 #[derive(Debug)]
 pub struct Backend {
     device: Arc<screen_13::prelude::Device>,
-    arrays: HashMap<usize, array::Array>,
+    arrays: HashMap<VarId, array::Array>,
 }
 
 #[derive(Debug)]
@@ -184,9 +196,9 @@ pub struct Ir {
 macro_rules! bop {
     ($bop:ident) => {
         paste! {
-        pub fn [<$bop:lower>](&mut self, lhs: usize, rhs: usize) -> usize {
-            let lhs_ty = &self.vars[lhs].ty;
-            let rhs_ty = &self.vars[rhs].ty;
+        pub fn [<$bop:lower>](&mut self, lhs: VarId, rhs: VarId) -> VarId {
+            let lhs_ty = &self.var( lhs ).ty;
+            let rhs_ty = &self.var( rhs ).ty;
             assert!(lhs_ty == rhs_ty);
             //let ty = VarType::Bool;
             let bop = Bop::$bop;
@@ -217,10 +229,10 @@ impl Ir {
             vars: Vec::default(),
         }
     }
-    pub fn array(&self, id: usize) -> &array::Array {
+    pub fn array(&self, id: VarId) -> &array::Array {
         &self.backend.arrays[&id]
     }
-    fn new_var(&mut self, op: Op, dependencies: Vec<usize>, ty: VarType) -> usize {
+    fn new_var(&mut self, op: Op, dependencies: Vec<VarId>, ty: VarType) -> VarId {
         self.push_var(Var {
             deps: dependencies,
             side_effects: Vec::new(),
@@ -228,13 +240,16 @@ impl Ir {
             ty,
         })
     }
-    fn push_var(&mut self, var: Var) -> usize {
+    fn push_var(&mut self, var: Var) -> VarId {
         let id = self.vars.len();
         self.vars.push(var);
-        id
+        VarId(id)
     }
-    pub fn var(&self, id: usize) -> &Var {
-        &self.vars[id]
+    pub fn var(&self, id: VarId) -> &Var {
+        &self.vars[id.0]
+    }
+    pub fn var_mut(&mut self, id: VarId) -> &mut Var {
+        &mut self.vars[id.0]
     }
 
     // Implement binary operations using bop macro
@@ -249,16 +264,19 @@ impl Ir {
     bop!(Geq);
     bop!(Neq);
 
-    pub fn select(&mut self, cond_id: usize, lhs_id: usize, rhs_id: usize) -> usize {
-        let lhs_ty = &self.vars[lhs_id].ty;
-        let rhs_ty = &self.vars[rhs_id].ty;
+    pub fn select(&mut self, cond_id: VarId, lhs_id: VarId, rhs_id: VarId) -> VarId {
+        let lhs_ty = &self.var(lhs_id).ty;
+        let rhs_ty = &self.var(rhs_id).ty;
         assert!(lhs_ty == rhs_ty);
         self.new_var(Op::Select, vec![cond_id, lhs_id, rhs_id], lhs_ty.clone())
     }
-    pub fn arange(&mut self, ty: VarType, num: usize) -> usize {
+    pub fn arange(&mut self, ty: VarType, num: usize) -> VarId {
         self.new_var(Op::Arange(num), vec![], ty)
     }
-    pub fn zeros(&mut self, ty: VarType) -> usize {
+    pub fn linspace(&mut self, ty: VarType, start_id: VarId, stop_id: VarId, num_id: VarId) {
+        todo!()
+    }
+    pub fn zeros(&mut self, ty: VarType) -> VarId {
         match ty {
             VarType::Struct(elems) => {
                 let elems = elems
@@ -274,7 +292,7 @@ impl Ir {
             _ => unimplemented!(),
         }
     }
-    pub fn ones(&mut self, ty: VarType) -> usize {
+    pub fn ones(&mut self, ty: VarType) -> VarId {
         match ty {
             VarType::Struct(elems) => {
                 let elems = elems
@@ -290,29 +308,29 @@ impl Ir {
             _ => unimplemented!(),
         }
     }
-    pub fn struct_init(&mut self, vars: Vec<usize>) -> usize {
+    pub fn struct_init(&mut self, vars: Vec<VarId>) -> VarId {
         let elems = vars
             .iter()
             .map(|id| {
-                let var = &self.vars[*id];
+                let var = &self.var(*id);
                 var.ty.clone()
             })
             .collect::<Vec<_>>();
         self.new_var(Op::StructInit, vars, VarType::Struct(elems))
     }
-    pub fn const_f32(&mut self, val: f32) -> usize {
+    pub fn const_f32(&mut self, val: f32) -> VarId {
         self.new_var(Op::Const(Const::Float32(val)), vec![], VarType::Float32)
     }
-    pub fn const_i32(&mut self, val: i32) -> usize {
+    pub fn const_i32(&mut self, val: i32) -> VarId {
         self.new_var(Op::Const(Const::Int32(val)), vec![], VarType::Int32)
     }
-    pub fn const_u32(&mut self, val: u32) -> usize {
+    pub fn const_u32(&mut self, val: u32) -> VarId {
         self.new_var(Op::Const(Const::UInt32(val)), vec![], VarType::UInt32)
     }
-    pub fn const_bool(&mut self, val: bool) -> usize {
+    pub fn const_bool(&mut self, val: bool) -> VarId {
         self.new_var(Op::Const(Const::Bool(val)), vec![], VarType::Bool)
     }
-    pub fn array_f32(&mut self, data: &[f32]) -> usize {
+    pub fn array_f32(&mut self, data: &[f32]) -> VarId {
         let id = self.push_var(Var {
             ty: VarType::Float32,
             op: Op::Binding,
@@ -329,7 +347,7 @@ impl Ir {
         );
         id
     }
-    pub fn array_i32(&mut self, data: &[i32]) -> usize {
+    pub fn array_i32(&mut self, data: &[i32]) -> VarId {
         let id = self.push_var(Var {
             ty: VarType::Int32,
             op: Op::Binding,
@@ -346,7 +364,7 @@ impl Ir {
         );
         id
     }
-    pub fn array_u32(&mut self, data: &[u32]) -> usize {
+    pub fn array_u32(&mut self, data: &[u32]) -> VarId {
         let id = self.push_var(Var {
             ty: VarType::UInt32,
             op: Op::Binding,
@@ -363,43 +381,43 @@ impl Ir {
         );
         id
     }
-    pub fn getattr(&mut self, src_id: usize, idx: usize) -> usize {
-        let src = &self.vars[src_id];
+    pub fn getattr(&mut self, src_id: VarId, idx: usize) -> VarId {
+        let src = &self.var(src_id);
         let ty = match src.ty {
             VarType::Struct(ref elems) => elems[idx].clone(),
             _ => unimplemented!(),
         };
         self.new_var(Op::GetAttr(idx), vec![src_id], ty)
     }
-    pub fn setattr(&mut self, dst_id: usize, src_id: usize, idx: usize) {
-        let src = &self.vars[src_id];
+    pub fn setattr(&mut self, dst_id: VarId, src_id: VarId, idx: usize) {
+        let src = &self.var(src_id);
         let ty = src.ty.clone();
         let var = self.new_var(Op::SetAttr(idx), vec![src_id], src.ty.clone());
-        let dst = &mut self.vars[dst_id];
+        let dst = self.var_mut(dst_id);
         dst.side_effects.push(var);
     }
-    pub fn gather(&mut self, src_id: usize, idx_id: usize) -> usize {
-        let src = &self.vars[src_id];
+    pub fn gather(&mut self, src_id: VarId, idx_id: VarId) -> VarId {
+        let src = &self.var(src_id);
         self.new_var(Op::Gather, vec![src_id, idx_id], src.ty.clone())
     }
     pub fn scatter(
         &mut self,
-        src_id: usize,
-        dst_id: usize,
-        idx_id: usize,
-        active_id: Option<usize>,
+        src_id: VarId,
+        dst_id: VarId,
+        idx_id: VarId,
+        active_id: Option<VarId>,
     ) {
-        let src = &self.vars[src_id];
+        let src = &self.var(src_id);
         let mut deps = vec![dst_id, idx_id];
         active_id.and_then(|id| {
             deps.push(id);
             Some(())
         });
         let var = self.new_var(Op::Scatter, deps, src.ty.clone());
-        self.vars[src_id].side_effects.push(var);
+        self.var_mut(src_id).side_effects.push(var);
     }
-    pub fn print_buffer(&self, id: usize) {
-        let var = &self.vars[id];
+    pub fn print_buffer(&self, id: VarId) {
+        let var = &self.var(id);
         let slice = screen_13::prelude::Buffer::mapped_slice(&self.backend.arrays[&id].buf);
         match var.ty {
             VarType::Float32 => {
@@ -417,13 +435,13 @@ impl Ir {
             _ => unimplemented!(),
         }
     }
-    pub fn as_slice<T: bytemuck::Pod>(&self, id: usize) -> &[T] {
-        let var = &self.vars[id];
+    pub fn as_slice<T: bytemuck::Pod>(&self, id: VarId) -> &[T] {
+        let var = &self.var(id);
         let slice = screen_13::prelude::Buffer::mapped_slice(&self.backend.arrays[&id].buf);
         assert!(var.ty.type_id() == TypeId::of::<T>());
         cast_slice(slice)
     }
-    pub fn eval(&mut self, schedule: Vec<usize>) -> Vec<usize> {
+    pub fn eval(&mut self, schedule: Vec<VarId>) -> Vec<VarId> {
         println!("{:#?}", self);
         let mut k = Kernel::new();
         let res = k.compile(self, schedule);
@@ -448,12 +466,12 @@ pub struct Binding {
 
 pub struct Kernel {
     pub b: rspirv::dr::Builder,
-    pub op_results: HashMap<usize, u32>,
-    pub vars: HashMap<usize, u32>,
+    pub op_results: HashMap<VarId, u32>,
+    pub vars: HashMap<VarId, u32>,
     pub num: Option<usize>,
 
-    pub bindings: HashMap<usize, Binding>,
-    pub arrays: HashMap<usize, u32>,
+    pub bindings: HashMap<VarId, Binding>,
+    pub arrays: HashMap<VarId, u32>,
     pub array_structs: HashMap<VarType, u32>,
     pub structs: HashMap<Vec<VarType>, u32>,
 
@@ -488,7 +506,7 @@ impl Kernel {
             global_invocation_id: None,
         }
     }
-    fn binding(&mut self, id: usize, access: Access) -> Binding {
+    fn binding(&mut self, id: VarId, access: Access) -> Binding {
         if !self.bindings.contains_key(&id) {
             let binding = Binding {
                 set: self.bindings.len() as u32,
@@ -533,12 +551,12 @@ impl Kernel {
         self.array_structs.insert(ty.clone(), ty_struct_ptr);
         ty_struct_ptr
     }
-    fn record_binding(&mut self, id: usize, ir: &Ir, access: Access) -> u32 {
+    fn record_binding(&mut self, id: VarId, ir: &Ir, access: Access) -> u32 {
         if self.arrays.contains_key(&id) {
             return self.arrays[&id];
         }
 
-        let var = &ir.vars[id];
+        let var = &ir.var(id);
 
         //self.set_num(var.array.as_ref().unwrap().count());
         // https://shader-playground.timjones.io/3af32078f879d8599902e46b919dbfe3
@@ -565,8 +583,8 @@ impl Kernel {
     /// Return a pointer to the binding at an index
     /// Note that idx is a spirv variable
     ///
-    fn access_binding_at(&mut self, id: usize, ir: &Ir, idx: u32) -> u32 {
-        let var = &ir.vars[id];
+    fn access_binding_at(&mut self, id: VarId, ir: &Ir, idx: u32) -> u32 {
+        let var = &ir.var(id);
         let ty = var.ty.to_spirv(&mut self.b);
         let ty_int = self.b.type_int(32, 1);
         let int_0 = self.b.constant_u32(ty_int, 0);
@@ -579,7 +597,7 @@ impl Kernel {
         ptr
     }
 
-    fn access_binding(&mut self, id: usize, ir: &Ir) -> u32 {
+    fn access_binding(&mut self, id: VarId, ir: &Ir) -> u32 {
         let idx = self.idx.unwrap();
         self.access_binding_at(id, ir, idx)
     }
@@ -596,8 +614,8 @@ impl Kernel {
     ///
     /// Traverse kernel and determine size. Panics if kernel size mismatches
     ///
-    fn record_kernel_size(&mut self, id: usize, ir: &Ir) {
-        let var = &ir.vars[id];
+    fn record_kernel_size(&mut self, id: VarId, ir: &Ir) {
+        let var = &ir.var(id);
         match var.op {
             Op::Binding => {
                 self.set_num(ir.backend.arrays[&id].count());
@@ -615,11 +633,11 @@ impl Kernel {
     ///
     /// Records bindings before main function.
     ///
-    fn record_bindings(&mut self, id: usize, ir: &Ir, access: Access) {
+    fn record_bindings(&mut self, id: VarId, ir: &Ir, access: Access) {
         if self.arrays.contains_key(&id) {
             return;
         }
-        let var = &ir.vars[id];
+        let var = &ir.var(id);
         match var.op {
             Op::Binding => {
                 for id in var.side_effects.iter() {
@@ -712,11 +730,11 @@ impl Kernel {
     ///
     /// Main record loop for recording variable operations.
     ///
-    fn record_ops(&mut self, id: usize, ir: &Ir) -> u32 {
+    fn record_ops(&mut self, id: VarId, ir: &Ir) -> u32 {
         if self.op_results.contains_key(&id) {
             return self.op_results[&id];
         }
-        let var = &ir.vars[id];
+        let var = &ir.var(id);
         let ret = match var.op {
             Op::Const(c) => {
                 let ty = var.ty.to_spirv(&mut self.b);
@@ -737,8 +755,8 @@ impl Kernel {
                 ret
             }
             Op::Bop(bop) => {
-                let lhs_ty = &ir.vars[var.deps[0]].ty;
-                let rhs_ty = &ir.vars[var.deps[1]].ty;
+                let lhs_ty = &ir.var(var.deps[0]).ty;
+                let rhs_ty = &ir.var(var.deps[1]).ty;
                 let lhs = self.record_ops(var.deps[0], ir);
                 let rhs = self.record_ops(var.deps[1], ir);
                 let ty = var.ty.to_spirv(&mut self.b);
@@ -843,7 +861,7 @@ impl Kernel {
                 self.b.store(ptr, object, None, None).unwrap();
                 ptr
             }
-            Op::Gather => match ir.vars[var.deps[0]].op {
+            Op::Gather => match ir.var(var.deps[0]).op {
                 Op::Binding => {
                     let ty = var.ty.to_spirv(&mut self.b);
                     let idx = self.record_ops(var.deps[1], ir);
@@ -898,7 +916,7 @@ impl Kernel {
         // Evaluate side effects like setattr
         for id in var.side_effects.iter() {
             let se_spv = self.record_ops(*id, ir);
-            let se = &ir.vars[*id];
+            let se = &ir.var(*id);
             match se.op {
                 Op::SetAttr(elem) => {
                     let ty = se.ty.to_spirv(&mut self.b);
@@ -911,7 +929,7 @@ impl Kernel {
                     let ptr = self.b.access_chain(ptr_ty, None, ret, vec![idx]).unwrap();
                     self.b.store(ptr, src, None, None).unwrap();
                 }
-                Op::Scatter => match ir.vars[se.deps[0]].op {
+                Op::Scatter => match ir.var(se.deps[0]).op {
                     Op::Binding => {
                         let ty = se.ty.to_spirv(&mut self.b);
                         let idx = self.record_ops(se.deps[1], ir);
@@ -936,11 +954,11 @@ impl Kernel {
     ///
     /// Record variables needed to store structs and variables for select.
     ///
-    pub fn record_spv_vars(&mut self, id: usize, ir: &Ir) {
+    pub fn record_spv_vars(&mut self, id: VarId, ir: &Ir) {
         if self.vars.contains_key(&id) {
             return;
         }
-        let var = &ir.vars[id];
+        let var = &ir.var(id);
 
         for id in var.deps.iter().chain(var.side_effects.iter()) {
             self.record_spv_vars(*id, ir);
@@ -959,7 +977,7 @@ impl Kernel {
             _ => {}
         };
     }
-    pub fn compile(&mut self, ir: &mut Ir, schedule: Vec<usize>) -> Vec<usize> {
+    pub fn compile(&mut self, ir: &mut Ir, schedule: Vec<VarId>) -> Vec<VarId> {
         // Determine kernel size
         for id in schedule.iter() {
             self.record_kernel_size(*id, ir);
@@ -997,7 +1015,7 @@ impl Kernel {
         let schedule = schedule
             .iter()
             .map(|id1| {
-                let ty = &ir.vars[*id1].ty.clone();
+                let ty = &ir.var(*id1).ty.clone();
                 let device = ir.backend.device.clone();
                 let id2 = ir.push_var(Var {
                     deps: vec![],

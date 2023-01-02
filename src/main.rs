@@ -20,6 +20,7 @@ mod test;
 fn main() {
     pretty_env_logger::init();
 
+    /*
     let cfg = DriverConfig::new()
         .debug(true)
         .presentation(false)
@@ -53,4 +54,5 @@ fn main() {
     k.execute(&i);
 
     i.print_buffer(res[0]);
+    */
 }
