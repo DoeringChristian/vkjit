@@ -6,8 +6,7 @@ use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 use vkjit_core::{Ir, VarId};
 
 pub trait Var {
-    fn id(&self) -> &VarId;
-    fn id_mut(&mut self) -> &mut VarId;
+    fn eval(self) -> Self;
 }
 
 #[derive(Clone, Copy)]
@@ -22,11 +21,9 @@ pub struct Bool(VarId);
 macro_rules! var {
     ($ty:ident) => {
         impl Var for $ty {
-            fn id(&self) -> &VarId {
-                &self.0
-            }
-            fn id_mut(&mut self) -> &mut VarId {
-                &mut self.0
+            fn eval(self) -> Self {
+                let res = IR.lock().unwrap().eval(vec![self.0]);
+                Self(res[0])
             }
         }
     };
@@ -114,8 +111,3 @@ bop!(I32, Div);
 dbg!(F32);
 dbg!(U32);
 dbg!(I32);
-
-pub fn eval_single<T: Var>(val: &mut T) {
-    let res = IR.lock().unwrap().eval(vec![*val.id()]);
-    *val.id_mut() = res[0];
-}
