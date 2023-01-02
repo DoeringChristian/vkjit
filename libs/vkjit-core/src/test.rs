@@ -11,7 +11,7 @@ mod test {
 
         let start = ir.const_f32(2.);
         let stop = ir.const_f32(4.);
-        let x = ir.linspace(VarType::Float32, start, stop, 4);
+        let x = ir.linspace(VarType::F32, start, stop, 4);
 
         let res = ir.eval(vec![x]);
 
@@ -22,8 +22,8 @@ mod test {
     fn test_add_f32() {
         let mut ir = Ir::new();
 
-        let x = ir.arange(VarType::Float32, 3);
-        let y = ir.arange(VarType::Float32, 3);
+        let x = ir.arange(VarType::F32, 3);
+        let y = ir.arange(VarType::F32, 3);
 
         let z = ir.add(x, y);
 
@@ -35,8 +35,8 @@ mod test {
     fn test_add_u32() {
         let mut ir = Ir::new();
 
-        let x = ir.arange(VarType::UInt32, 3);
-        let y = ir.arange(VarType::UInt32, 3);
+        let x = ir.arange(VarType::U32, 3);
+        let y = ir.arange(VarType::U32, 3);
 
         let z = ir.add(x, y);
 
@@ -48,8 +48,8 @@ mod test {
     fn test_add_i32() {
         let mut ir = Ir::new();
 
-        let x = ir.arange(VarType::Int32, 3);
-        let y = ir.arange(VarType::Int32, 3);
+        let x = ir.arange(VarType::I32, 3);
+        let y = ir.arange(VarType::I32, 3);
 
         let z = ir.add(x, y);
 
@@ -102,7 +102,7 @@ mod test {
     fn test_scatter_f32() {
         let mut ir = Ir::new();
 
-        let idx = ir.arange(VarType::UInt32, 3);
+        let idx = ir.arange(VarType::U32, 3);
         let x = ir.array_f32(&[0., 1., 2.]);
 
         let y = ir.array_f32(&[0., 0., 0.]);
@@ -117,7 +117,7 @@ mod test {
     fn test_scatter_conditional() {
         let mut ir = Ir::new();
 
-        let idx = ir.arange(VarType::UInt32, 3);
+        let idx = ir.arange(VarType::U32, 3);
         let x = ir.array_f32(&[0., 1., 2., 3., 4.]);
 
         let y = ir.array_f32(&[0., 0., 0., 0., 0.]);
@@ -136,8 +136,8 @@ mod test {
     fn cast_u32_to_f32() {
         let mut ir = Ir::new();
 
-        let x = ir.arange(VarType::UInt32, 3);
-        let y = ir.cast(x, VarType::Float32);
+        let x = ir.arange(VarType::U32, 3);
+        let y = ir.cast(x, VarType::F32);
 
         let res = ir.eval(vec![y]);
 

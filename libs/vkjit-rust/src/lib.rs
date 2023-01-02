@@ -10,4 +10,5 @@ lazy_static! {
     pub static ref IR: Mutex<Ir> = { Mutex::new(Ir::new()) };
 }
 
+pub use functions::*;
 pub use types::*;

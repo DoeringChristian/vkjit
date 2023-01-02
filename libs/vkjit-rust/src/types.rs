@@ -2,11 +2,15 @@ use crate::IR;
 use paste::paste;
 use std::fmt::Debug;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+use vkjit_core::internal::VarType;
 
 use vkjit_core::{Ir, VarId};
 
 pub trait Var {
     fn eval(self) -> Self;
+    fn id(self) -> VarId;
+    fn from_id(id: VarId) -> Self;
+    fn ty() -> VarType;
 }
 
 #[derive(Clone, Copy)]
@@ -24,6 +28,15 @@ macro_rules! var {
             fn eval(self) -> Self {
                 let res = IR.lock().unwrap().eval(vec![self.0]);
                 Self(res[0])
+            }
+            fn id(self) -> VarId {
+                self.0
+            }
+            fn from_id(id: VarId) -> Self {
+                Self(id)
+            }
+            fn ty() -> VarType {
+                VarType::$ty
             }
         }
     };
@@ -79,7 +92,7 @@ macro_rules! dbg {
     };
 }
 
-macro_rules! from {
+macro_rules! from_const {
     ($ty:ident) => {
         paste! {
             impl From<[<$ty:lower>]> for $ty {
@@ -87,6 +100,13 @@ macro_rules! from {
                     Self(IR.lock().unwrap().[<const_ $ty:lower>](value))
                 }
             }
+        }
+    };
+}
+
+macro_rules! from {
+    ($ty:ident) => {
+        paste! {
             impl From<&[[<$ty:lower>]]> for $ty {
                 fn from(value: &[[<$ty:lower>]]) -> Self {
                     Self(IR.lock().unwrap().[<array_ $ty:lower>](value))
@@ -107,7 +127,25 @@ macro_rules! select {
             pub fn select(self, other: impl Into<Self>, condition: impl Into<Bool>) -> Self {
                 let other = other.into();
                 let condition = condition.into();
-                Self(IR.lock().unwrap().select(condition.0, self.0, other.0))
+                Self(IR.lock().unwrap().select(condition.0, other.0, self.0))
+            }
+        }
+    };
+}
+
+macro_rules! scatter {
+    ($ty:ident) => {
+        impl $ty {
+            pub fn scatter(self, dst: Self, idx: impl Into<U32>) {
+                let idx = idx.into();
+                IR.lock().unwrap().scatter(self.0, dst.0, idx.0, None);
+            }
+            pub fn scatter_with(self, dst: Self, idx: impl Into<U32>, condition: impl Into<Bool>) {
+                let idx = idx.into();
+                let condition = condition.into();
+                IR.lock()
+                    .unwrap()
+                    .scatter(self.0, dst.0, idx.0, Some(condition.0));
             }
         }
     };
@@ -129,7 +167,9 @@ bop!(F32, Neq);
 
 dbg!(F32);
 from!(F32);
+from_const!(F32);
 select!(F32);
+scatter!(F32);
 
 var!(U32);
 
@@ -147,7 +187,9 @@ bop!(U32, Neq);
 
 dbg!(U32);
 from!(U32);
+from_const!(U32);
 select!(U32);
+scatter!(U32);
 
 var!(I32);
 
@@ -165,4 +207,12 @@ bop!(I32, Neq);
 
 dbg!(I32);
 from!(I32);
+from_const!(I32);
 select!(I32);
+scatter!(I32);
+
+var!(Bool);
+
+from_const!(Bool);
+select!(Bool);
+scatter!(Bool);

@@ -66,18 +66,18 @@ pub enum VarType {
     // struct
     Void,
     Bool,
-    UInt32,
-    Int32,
-    Float32,
+    U32,
+    I32,
+    F32,
 }
 impl VarType {
     pub fn name(&self) -> String {
         match self {
             VarType::Void => "Void".into(),
             VarType::Bool => "Bool".into(),
-            VarType::UInt32 => "UInt32".into(),
-            VarType::Int32 => "Int32".into(),
-            VarType::Float32 => "Float32".into(),
+            VarType::U32 => "UInt32".into(),
+            VarType::I32 => "Int32".into(),
+            VarType::F32 => "Float32".into(),
             _ => unimplemented!(),
         }
     }
@@ -85,9 +85,9 @@ impl VarType {
         match self {
             VarType::Void => 0,
             VarType::Bool => bool::std140_size_static(),
-            VarType::UInt32 => u32::std140_size_static(),
-            VarType::Int32 => i32::std140_size_static(),
-            VarType::Float32 => f32::std140_size_static(),
+            VarType::U32 => u32::std140_size_static(),
+            VarType::I32 => i32::std140_size_static(),
+            VarType::F32 => f32::std140_size_static(),
             _ => unimplemented!(),
         }
     }
@@ -95,9 +95,9 @@ impl VarType {
         match self {
             VarType::Void => 0,
             VarType::Bool => bool::std140_size_static(),
-            VarType::UInt32 => u32::std140_size_static(),
-            VarType::Int32 => i32::std140_size_static(),
-            VarType::Float32 => f32::std140_size_static(),
+            VarType::U32 => u32::std140_size_static(),
+            VarType::I32 => i32::std140_size_static(),
+            VarType::F32 => f32::std140_size_static(),
             _ => unimplemented!(),
         }
     }
@@ -108,9 +108,9 @@ impl VarType {
         let ty_i32 = std::any::TypeId::of::<i32>();
         let ty_bool = std::any::TypeId::of::<bool>();
         match std::any::TypeId::of::<T>() {
-            ty_f32 => Self::Float32,
-            ty_u32 => Self::UInt32,
-            ty_i32 => Self::Int32,
+            ty_f32 => Self::F32,
+            ty_u32 => Self::U32,
+            ty_i32 => Self::I32,
             ty_bool => Self::Bool,
             _ => unimplemented!(),
         }
@@ -118,9 +118,9 @@ impl VarType {
     pub fn type_id(&self) -> TypeId {
         match self {
             VarType::Bool => TypeId::of::<bool>(),
-            VarType::UInt32 => TypeId::of::<u32>(),
-            VarType::Int32 => TypeId::of::<i32>(),
-            VarType::Float32 => TypeId::of::<f32>(),
+            VarType::U32 => TypeId::of::<u32>(),
+            VarType::I32 => TypeId::of::<i32>(),
+            VarType::F32 => TypeId::of::<f32>(),
             _ => panic!("Error: {:?} type has no defined type id!", self),
         }
     }
@@ -128,9 +128,9 @@ impl VarType {
         match self {
             VarType::Void => b.type_void(),
             VarType::Bool => b.type_bool(),
-            VarType::UInt32 => b.type_int(32, 0),
-            VarType::Int32 => b.type_int(32, 1),
-            VarType::Float32 => b.type_float(32),
+            VarType::U32 => b.type_int(32, 0),
+            VarType::I32 => b.type_int(32, 1),
+            VarType::F32 => b.type_float(32),
             VarType::Struct(elems) => {
                 let elems = elems
                     .iter()
@@ -147,15 +147,15 @@ impl From<VarType> for rspirv::sr::Type {
         match ty {
             VarType::Void => Self::Void,
             VarType::Bool => Self::Bool,
-            VarType::UInt32 => Self::Int {
+            VarType::U32 => Self::Int {
                 width: 32,
                 signedness: 0,
             },
-            VarType::Int32 => Self::Int {
+            VarType::I32 => Self::Int {
                 width: 32,
                 signedness: 1,
             },
-            VarType::Float32 => Self::Float { width: 32 },
+            VarType::F32 => Self::Float { width: 32 },
             _ => unimplemented!(),
         }
     }
@@ -291,9 +291,9 @@ impl Ir {
                 self.struct_init(elems)
             }
             VarType::Bool => self.const_bool(false),
-            VarType::Int32 => self.const_i32(0),
-            VarType::UInt32 => self.const_u32(0),
-            VarType::Float32 => self.const_f32(0.),
+            VarType::I32 => self.const_i32(0),
+            VarType::U32 => self.const_u32(0),
+            VarType::F32 => self.const_f32(0.),
             _ => unimplemented!(),
         }
     }
@@ -307,9 +307,9 @@ impl Ir {
                 self.struct_init(elems)
             }
             VarType::Bool => self.const_bool(true),
-            VarType::Int32 => self.const_i32(1),
-            VarType::UInt32 => self.const_u32(1),
-            VarType::Float32 => self.const_f32(1.),
+            VarType::I32 => self.const_i32(1),
+            VarType::U32 => self.const_u32(1),
+            VarType::F32 => self.const_f32(1.),
             _ => unimplemented!(),
         }
     }
@@ -327,20 +327,20 @@ impl Ir {
         self.new_var(Op::StructInit, vars, VarType::Struct(elems))
     }
     pub fn const_f32(&mut self, val: f32) -> VarId {
-        self.new_var(Op::Const(Const::Float32(val)), vec![], VarType::Float32)
+        self.new_var(Op::Const(Const::Float32(val)), vec![], VarType::F32)
     }
     pub fn const_i32(&mut self, val: i32) -> VarId {
-        self.new_var(Op::Const(Const::Int32(val)), vec![], VarType::Int32)
+        self.new_var(Op::Const(Const::Int32(val)), vec![], VarType::I32)
     }
     pub fn const_u32(&mut self, val: u32) -> VarId {
-        self.new_var(Op::Const(Const::UInt32(val)), vec![], VarType::UInt32)
+        self.new_var(Op::Const(Const::UInt32(val)), vec![], VarType::U32)
     }
     pub fn const_bool(&mut self, val: bool) -> VarId {
         self.new_var(Op::Const(Const::Bool(val)), vec![], VarType::Bool)
     }
     pub fn array_f32(&mut self, data: &[f32]) -> VarId {
         let id = self.push_var(Var {
-            ty: VarType::Float32,
+            ty: VarType::F32,
             op: Op::Binding,
             deps: vec![],
             side_effects: vec![],
@@ -357,7 +357,7 @@ impl Ir {
     }
     pub fn array_i32(&mut self, data: &[i32]) -> VarId {
         let id = self.push_var(Var {
-            ty: VarType::Int32,
+            ty: VarType::I32,
             op: Op::Binding,
             deps: vec![],
             side_effects: vec![],
@@ -374,7 +374,7 @@ impl Ir {
     }
     pub fn array_u32(&mut self, data: &[u32]) -> VarId {
         let id = self.push_var(Var {
-            ty: VarType::UInt32,
+            ty: VarType::U32,
             op: Op::Binding,
             deps: vec![],
             side_effects: vec![],
@@ -428,13 +428,13 @@ impl Ir {
         let var = &self.var(id);
         let slice = screen_13::prelude::Buffer::mapped_slice(&self.backend.arrays[&id].buf);
         match var.ty {
-            VarType::Float32 => {
+            VarType::F32 => {
                 println!("{:?}", cast_slice::<_, f32>(slice))
             }
-            VarType::UInt32 => {
+            VarType::U32 => {
                 println!("{:?}", cast_slice::<_, u32>(slice))
             }
-            VarType::Int32 => {
+            VarType::I32 => {
                 println!("{:?}", cast_slice::<_, i32>(slice))
             }
             VarType::Bool => {
@@ -771,70 +771,60 @@ impl Kernel {
                 let ty = var.ty.to_spirv(&mut self.b);
                 let ret = match bop {
                     Bop::Add => match var.ty {
-                        VarType::Int32 | VarType::UInt32 => {
-                            self.b.i_add(ty, None, lhs, rhs).unwrap()
-                        }
-                        VarType::Float32 => self.b.f_add(ty, None, lhs, rhs).unwrap(),
+                        VarType::I32 | VarType::U32 => self.b.i_add(ty, None, lhs, rhs).unwrap(),
+                        VarType::F32 => self.b.f_add(ty, None, lhs, rhs).unwrap(),
                         _ => panic!("Addition not defined for type {:?}", var.ty),
                     },
                     Bop::Sub => match var.ty {
-                        VarType::Int32 | VarType::UInt32 => {
-                            self.b.i_sub(ty, None, lhs, rhs).unwrap()
-                        }
-                        VarType::Float32 => self.b.f_sub(ty, None, lhs, rhs).unwrap(),
+                        VarType::I32 | VarType::U32 => self.b.i_sub(ty, None, lhs, rhs).unwrap(),
+                        VarType::F32 => self.b.f_sub(ty, None, lhs, rhs).unwrap(),
                         _ => panic!("Addition not defined for type {:?}", var.ty),
                     },
                     Bop::Mul => match var.ty {
-                        VarType::Int32 | VarType::UInt32 => {
-                            self.b.i_mul(ty, None, lhs, rhs).unwrap()
-                        }
-                        VarType::Float32 => self.b.f_mul(ty, None, lhs, rhs).unwrap(),
+                        VarType::I32 | VarType::U32 => self.b.i_mul(ty, None, lhs, rhs).unwrap(),
+                        VarType::F32 => self.b.f_mul(ty, None, lhs, rhs).unwrap(),
                         _ => panic!("Addition not defined for type {:?}", var.ty),
                     },
                     Bop::Div => match var.ty {
-                        VarType::Int32 => self.b.s_div(ty, None, lhs, rhs).unwrap(),
-                        VarType::UInt32 => self.b.u_div(ty, None, lhs, rhs).unwrap(),
-                        VarType::Float32 => self.b.f_div(ty, None, lhs, rhs).unwrap(),
+                        VarType::I32 => self.b.s_div(ty, None, lhs, rhs).unwrap(),
+                        VarType::U32 => self.b.u_div(ty, None, lhs, rhs).unwrap(),
+                        VarType::F32 => self.b.f_div(ty, None, lhs, rhs).unwrap(),
                         _ => panic!("Addition not defined for type {:?}", var.ty),
                     },
                     Bop::Lt => match lhs_ty {
-                        VarType::Float32 => self.b.f_ord_less_than(ty, None, lhs, rhs).unwrap(),
-                        VarType::Int32 => self.b.s_less_than(ty, None, lhs, rhs).unwrap(),
-                        VarType::UInt32 => self.b.u_less_than(ty, None, lhs, rhs).unwrap(),
+                        VarType::F32 => self.b.f_ord_less_than(ty, None, lhs, rhs).unwrap(),
+                        VarType::I32 => self.b.s_less_than(ty, None, lhs, rhs).unwrap(),
+                        VarType::U32 => self.b.u_less_than(ty, None, lhs, rhs).unwrap(),
                         _ => unimplemented!(),
                     },
                     Bop::Gt => match lhs_ty {
-                        VarType::Float32 => self.b.f_ord_greater_than(ty, None, lhs, rhs).unwrap(),
-                        VarType::Int32 => self.b.s_greater_than(ty, None, lhs, rhs).unwrap(),
-                        VarType::UInt32 => self.b.u_greater_than(ty, None, lhs, rhs).unwrap(),
+                        VarType::F32 => self.b.f_ord_greater_than(ty, None, lhs, rhs).unwrap(),
+                        VarType::I32 => self.b.s_greater_than(ty, None, lhs, rhs).unwrap(),
+                        VarType::U32 => self.b.u_greater_than(ty, None, lhs, rhs).unwrap(),
                         _ => unimplemented!(),
                     },
                     Bop::Eq => match lhs_ty {
-                        VarType::Float32 => self.b.f_ord_equal(ty, None, lhs, rhs).unwrap(),
-                        VarType::Int32 | VarType::UInt32 => {
-                            self.b.i_equal(ty, None, lhs, rhs).unwrap()
-                        }
+                        VarType::F32 => self.b.f_ord_equal(ty, None, lhs, rhs).unwrap(),
+                        VarType::I32 | VarType::U32 => self.b.i_equal(ty, None, lhs, rhs).unwrap(),
                         _ => unimplemented!(),
                     },
                     Bop::Leq => match lhs_ty {
-                        VarType::Float32 => {
-                            self.b.f_ord_less_than_equal(ty, None, lhs, rhs).unwrap()
-                        }
-                        VarType::Int32 => self.b.s_less_than_equal(ty, None, lhs, rhs).unwrap(),
-                        VarType::UInt32 => self.b.u_less_than_equal(ty, None, lhs, rhs).unwrap(),
+                        VarType::F32 => self.b.f_ord_less_than_equal(ty, None, lhs, rhs).unwrap(),
+                        VarType::I32 => self.b.s_less_than_equal(ty, None, lhs, rhs).unwrap(),
+                        VarType::U32 => self.b.u_less_than_equal(ty, None, lhs, rhs).unwrap(),
                         _ => unimplemented!(),
                     },
                     Bop::Geq => match lhs_ty {
-                        VarType::Float32 => {
+                        VarType::F32 => {
                             self.b.f_ord_greater_than_equal(ty, None, lhs, rhs).unwrap()
                         }
-                        VarType::Int32 => self.b.s_greater_than_equal(ty, None, lhs, rhs).unwrap(),
-                        VarType::UInt32 => self.b.u_greater_than_equal(ty, None, lhs, rhs).unwrap(),
+                        VarType::I32 => self.b.s_greater_than_equal(ty, None, lhs, rhs).unwrap(),
+                        VarType::U32 => self.b.u_greater_than_equal(ty, None, lhs, rhs).unwrap(),
                         _ => unimplemented!(),
                     },
                     Bop::Neq => match lhs_ty {
-                        VarType::Float32 => self.b.f_ord_not_equal(ty, None, lhs, rhs).unwrap(),
-                        VarType::Int32 | VarType::UInt32 => {
+                        VarType::F32 => self.b.f_ord_not_equal(ty, None, lhs, rhs).unwrap(),
+                        VarType::I32 | VarType::U32 => {
                             self.b.i_not_equal(ty, None, lhs, rhs).unwrap()
                         }
                         _ => unimplemented!(),
@@ -848,29 +838,29 @@ impl Kernel {
                 let src_ty = &ir.var(var.deps[0]).ty;
                 let src_spv = self.record_ops(var.deps[0], ir);
                 match src_ty {
-                    VarType::Float32 => match var.ty {
-                        VarType::Float32 => src_spv,
-                        VarType::UInt32 => {
+                    VarType::F32 => match var.ty {
+                        VarType::F32 => src_spv,
+                        VarType::U32 => {
                             let ty = var.ty.to_spirv(&mut self.b);
                             self.b.convert_u_to_f(ty, None, src_spv).unwrap()
                         }
-                        VarType::Int32 => {
+                        VarType::I32 => {
                             let ty = var.ty.to_spirv(&mut self.b);
                             self.b.convert_s_to_f(ty, None, src_spv).unwrap()
                         }
                         _ => unimplemented!(),
                     },
-                    VarType::UInt32 => match var.ty {
-                        VarType::UInt32 | VarType::Int32 => src_spv,
-                        VarType::Float32 => {
+                    VarType::U32 => match var.ty {
+                        VarType::U32 | VarType::I32 => src_spv,
+                        VarType::F32 => {
                             let ty = var.ty.to_spirv(&mut self.b);
                             self.b.convert_u_to_f(ty, None, src_spv).unwrap()
                         }
                         _ => unimplemented!(),
                     },
-                    VarType::Int32 => match var.ty {
-                        VarType::UInt32 | VarType::Int32 => src_spv,
-                        VarType::Float32 => {
+                    VarType::I32 => match var.ty {
+                        VarType::U32 | VarType::I32 => src_spv,
+                        VarType::F32 => {
                             let ty = var.ty.to_spirv(&mut self.b);
                             self.b.convert_s_to_f(ty, None, src_spv).unwrap()
                         }
@@ -918,12 +908,12 @@ impl Kernel {
             Op::Arange(num) => {
                 //self.set_num(num);
                 let ret = match var.ty {
-                    VarType::UInt32 => self.idx.unwrap(),
-                    VarType::Int32 => {
+                    VarType::U32 => self.idx.unwrap(),
+                    VarType::I32 => {
                         let ty = var.ty.to_spirv(&mut self.b);
                         self.b.bitcast(ty, None, self.idx.unwrap()).unwrap()
                     }
-                    VarType::Float32 => {
+                    VarType::F32 => {
                         let ty = var.ty.to_spirv(&mut self.b);
                         self.b.convert_u_to_f(ty, None, self.idx.unwrap()).unwrap()
                     }
@@ -993,6 +983,7 @@ impl Kernel {
                 _ => {}
             }
         }
+        self.op_results.insert(id, ret);
         ret
     }
     ///
