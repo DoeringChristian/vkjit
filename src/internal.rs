@@ -176,7 +176,7 @@ pub struct Backend {
 }
 
 #[derive(Debug)]
-pub struct Internal {
+pub struct Ir {
     backend: Backend,
     vars: Vec<Var>,
 }
@@ -196,8 +196,19 @@ macro_rules! bop {
         }
     };
 }
-impl Internal {
+impl Ir {
     pub fn new(device: &Arc<screen_13::driver::Device>) -> Self {
+        Self {
+            backend: Backend {
+                device: device.clone(),
+                arrays: HashMap::default(),
+            },
+            vars: Vec::default(),
+        }
+    }
+    pub fn new_sc13() -> Self {
+        let cfg = DriverConfig::new().build();
+        let device = Arc::new(Device::new(cfg).unwrap());
         Self {
             backend: Backend {
                 device: device.clone(),
@@ -488,7 +499,7 @@ impl Kernel {
         self.array_structs.insert(ty.clone(), ty_struct_ptr);
         ty_struct_ptr
     }
-    fn record_binding(&mut self, id: usize, ir: &Internal, access: Access) -> u32 {
+    fn record_binding(&mut self, id: usize, ir: &Ir, access: Access) -> u32 {
         if self.arrays.contains_key(&id) {
             return self.arrays[&id];
         }
@@ -520,7 +531,7 @@ impl Kernel {
     /// Return a pointer to the binding at an index
     /// Note that idx is a spirv variable
     ///
-    fn access_binding_at(&mut self, id: usize, ir: &Internal, idx: u32) -> u32 {
+    fn access_binding_at(&mut self, id: usize, ir: &Ir, idx: u32) -> u32 {
         let var = &ir.vars[id];
         let ty = var.ty.to_spirv(&mut self.b);
         let ty_int = self.b.type_int(32, 1);
@@ -534,7 +545,7 @@ impl Kernel {
         ptr
     }
 
-    fn access_binding(&mut self, id: usize, ir: &Internal) -> u32 {
+    fn access_binding(&mut self, id: usize, ir: &Ir) -> u32 {
         let idx = self.idx.unwrap();
         self.access_binding_at(id, ir, idx)
     }
@@ -551,7 +562,7 @@ impl Kernel {
     ///
     /// Traverse kernel and determine size. Panics if kernel size mismatches
     ///
-    fn record_kernel_size(&mut self, id: usize, ir: &Internal) {
+    fn record_kernel_size(&mut self, id: usize, ir: &Ir) {
         let var = &ir.vars[id];
         match var.op {
             Op::Binding => {
@@ -570,7 +581,7 @@ impl Kernel {
     ///
     /// Records bindings before main function.
     ///
-    fn record_bindings(&mut self, id: usize, ir: &Internal, access: Access) {
+    fn record_bindings(&mut self, id: usize, ir: &Ir, access: Access) {
         if self.arrays.contains_key(&id) {
             return;
         }
@@ -667,7 +678,7 @@ impl Kernel {
     ///
     /// Main record loop for recording variable operations.
     ///
-    fn record_ops(&mut self, id: usize, ir: &Internal) -> u32 {
+    fn record_ops(&mut self, id: usize, ir: &Ir) -> u32 {
         if self.op_results.contains_key(&id) {
             return self.op_results[&id];
         }
@@ -891,7 +902,7 @@ impl Kernel {
     ///
     /// Record variables needed to store structs and variables for select.
     ///
-    pub fn record_spv_vars(&mut self, id: usize, ir: &Internal) {
+    pub fn record_spv_vars(&mut self, id: usize, ir: &Ir) {
         if self.vars.contains_key(&id) {
             return;
         }
@@ -914,7 +925,7 @@ impl Kernel {
             _ => {}
         };
     }
-    pub fn compile(&mut self, ir: &mut Internal, schedule: Vec<usize>) -> Vec<usize> {
+    pub fn compile(&mut self, ir: &mut Ir, schedule: Vec<usize>) -> Vec<usize> {
         // Determine kernel size
         for id in schedule.iter() {
             self.record_kernel_size(*id, ir);
@@ -1045,7 +1056,7 @@ impl Kernel {
 
         result
     }
-    pub fn record_render_graph(self, ir: &Internal, graph: &mut RenderGraph) {
+    pub fn record_render_graph(self, ir: &Ir, graph: &mut RenderGraph) {
         let module = self.b.module();
         println!("{}", module.disassemble());
 
@@ -1079,7 +1090,7 @@ impl Kernel {
         })
         .submit_pass();
     }
-    pub fn execute(self, ir: &Internal) {
+    pub fn execute(self, ir: &Ir) {
         let mut graph = RenderGraph::new();
         let mut pool = LazyPool::new(&ir.backend.device);
 

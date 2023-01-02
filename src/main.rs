@@ -28,7 +28,7 @@ fn main() {
     let sc13 = EventLoop::new().debug(true).build().unwrap();
     //let device = Arc::new(Device::new(cfg).unwrap());
 
-    let mut i = internal::Internal::new(&sc13.device);
+    let mut i = internal::Ir::new(&sc13.device);
 
     // Record kernel
     //let st = i.zeros(ir::VarType::Struct(vec![ir::VarType::Float32]));
