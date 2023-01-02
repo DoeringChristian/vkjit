@@ -3,7 +3,7 @@ use screen_13::prelude::*;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use crate::ir::VarType;
+use crate::internal::VarType;
 
 #[derive(Debug)]
 pub struct Array {
@@ -19,7 +19,7 @@ impl Array {
         usage: vk::BufferUsageFlags,
     ) -> Self {
         let size = ty.size() * count;
-        let mut buf = Buffer::create(device, BufferInfo::new_mappable(size as u64, usage)).unwrap();
+        let buf = Buffer::create(device, BufferInfo::new_mappable(size as u64, usage)).unwrap();
         Self {
             buf: Arc::new(buf),
             count,

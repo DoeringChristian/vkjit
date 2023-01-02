@@ -3,6 +3,7 @@ use paste::paste;
 use rspirv::binary::{Assemble, Disassemble};
 use rspirv::spirv;
 use screen_13::prelude::{vk, ComputePipeline, LazyPool, RenderGraph};
+use std::any::TypeId;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -34,9 +35,10 @@ enum Bop {
 }
 
 impl Bop {
-    fn eval_ty<'a>(self, lhs: &'a VarType, rhs: &'a VarType) -> &'a VarType {
+    fn eval_ty<'a>(self, lhs: &'a VarType, rhs: &'a VarType) -> VarType {
         match self {
-            Self::Add => lhs.max(rhs),
+            Self::Add | Self::Sub | Self::Mul | Self::Div => lhs.max(rhs).clone(),
+            Self::Lt | Self::Gt | Self::Eq | Self::Leq | Self::Geq | Self::Neq => VarType::Bool,
             _ => unimplemented!(),
         }
     }
@@ -111,6 +113,15 @@ impl VarType {
             _ => unimplemented!(),
         }
     }
+    pub fn type_id(&self) -> TypeId {
+        match self {
+            VarType::Bool => TypeId::of::<bool>(),
+            VarType::UInt32 => TypeId::of::<u32>(),
+            VarType::Int32 => TypeId::of::<i32>(),
+            VarType::Float32 => TypeId::of::<f32>(),
+            _ => panic!("Error: {:?} type has no defined type id!", self),
+        }
+    }
     fn to_spirv(&self, b: &mut rspirv::dr::Builder) -> u32 {
         match self {
             VarType::Void => b.type_void(),
@@ -177,8 +188,10 @@ macro_rules! bop {
             let lhs_ty = &self.vars[lhs].ty;
             let rhs_ty = &self.vars[rhs].ty;
             assert!(lhs_ty == rhs_ty);
-            let ty = VarType::Bool;
-            self.new_var(Op::Bop(Bop::$bop), vec![lhs, rhs], ty.clone())
+            //let ty = VarType::Bool;
+            let bop = Bop::$bop;
+            let ty = bop.eval_ty(lhs_ty, rhs_ty);
+            self.new_var(Op::Bop(bop), vec![lhs, rhs], ty)
         }
         }
     };
@@ -359,6 +372,19 @@ impl Internal {
             _ => unimplemented!(),
         }
     }
+    pub fn as_slice<T: bytemuck::Pod>(&self, id: usize) -> &[T] {
+        let var = &self.vars[id];
+        let slice = screen_13::prelude::Buffer::mapped_slice(&self.backend.arrays[&id].buf);
+        assert!(var.ty.type_id() == TypeId::of::<T>());
+        cast_slice(slice)
+    }
+    pub fn eval(&mut self, schedule: Vec<usize>) -> Vec<usize> {
+        println!("{:#?}", self);
+        let mut k = Kernel::new();
+        let res = k.compile(self, schedule);
+        k.execute(self);
+        res
+    }
     // Composite operations
 }
 
@@ -495,7 +521,6 @@ impl Kernel {
     /// Note that idx is a spirv variable
     ///
     fn access_binding_at(&mut self, id: usize, ir: &Internal, idx: u32) -> u32 {
-        println!("{}", id);
         let var = &ir.vars[id];
         let ty = var.ty.to_spirv(&mut self.b);
         let ty_int = self.b.type_int(32, 1);
@@ -935,9 +960,6 @@ impl Kernel {
 
         //
 
-        println!("{:#?}", self.bindings);
-        println!("{:#?}", self.arrays);
-
         // Setup main function
         let void = self.b.type_void();
         let voidf = self.b.type_function(void, vec![]);
@@ -1022,14 +1044,11 @@ impl Kernel {
 
         let mut pass = graph.begin_pass("Eval kernel").bind_pipeline(&pipeline);
         for (id, binding) in self.bindings.iter() {
-            println!("id={id}");
             match binding.access {
                 Access::Read => {
-                    println!("Read");
                     pass = pass.read_descriptor((binding.set, binding.binding), nodes[&id]);
                 }
                 Access::Write => {
-                    println!("Write");
                     pass = pass.write_descriptor((binding.set, binding.binding), nodes[&id]);
                 }
             }
@@ -1040,14 +1059,14 @@ impl Kernel {
         })
         .submit_pass();
     }
-    pub fn execute(self, ir: &Internal, device: &Arc<screen_13::prelude::Device>) {
+    pub fn execute(self, ir: &Internal) {
         let mut graph = RenderGraph::new();
-        let mut pool = LazyPool::new(device);
+        let mut pool = LazyPool::new(&ir.backend.device);
 
         self.record_render_graph(&ir, &mut graph);
 
         graph.resolve().submit(&mut pool, 0).unwrap();
 
-        unsafe { device.device_wait_idle().unwrap() };
+        unsafe { ir.backend.device.device_wait_idle().unwrap() };
     }
 }

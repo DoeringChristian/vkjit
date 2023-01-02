@@ -8,12 +8,14 @@ use std::sync::Arc;
 use rspirv::binary::{Assemble, Disassemble};
 
 use crate::array::Array;
-use crate::ir::Access;
+use crate::internal::Access;
 
 #[allow(dead_code)]
 mod array;
 #[allow(dead_code)]
-mod ir;
+mod internal;
+
+mod test;
 
 fn main() {
     pretty_env_logger::init();
@@ -26,7 +28,7 @@ fn main() {
     let sc13 = EventLoop::new().debug(true).build().unwrap();
     //let device = Arc::new(Device::new(cfg).unwrap());
 
-    let mut i = ir::Internal::new(&sc13.device);
+    let mut i = internal::Internal::new(&sc13.device);
 
     // Record kernel
     //let st = i.zeros(ir::VarType::Struct(vec![ir::VarType::Float32]));
@@ -38,17 +40,17 @@ fn main() {
 
     let x = i.array_f32(&[0., 1., 2., 3.]);
     let y = i.array_f32(&[5.; 4]);
-    let idx = i.arange(ir::VarType::UInt32, 4);
+    let idx = i.arange(internal::VarType::UInt32, 4);
 
     let c2 = i.const_u32(2);
     let c = i.lt(idx, c2);
 
     let z = i.select(c, x, y);
 
-    let mut k = ir::Kernel::new();
+    let mut k = internal::Kernel::new();
     let res = k.compile(&mut i, vec![z]);
 
-    k.execute(&i, &sc13.device);
+    k.execute(&i);
 
     i.print_buffer(res[0]);
 }
