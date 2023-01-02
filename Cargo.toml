@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 vkjit-core = {path = "libs/vkjit-core"}
+vkjit-rust = {path = "libs/vkjit-rust"}

@@ -1514,10 +1514,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "vkjit-rust"
+version = "0.1.0"
+dependencies = [
+ "lazy_static",
+ "paste",
+ "vkjit-core",
+]
+
+[[package]]
 name = "vkjit03"
 version = "0.1.0"
 dependencies = [
  "vkjit-core",
+ "vkjit-rust",
 ]
 
 [[package]]
