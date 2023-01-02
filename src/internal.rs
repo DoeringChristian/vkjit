@@ -197,7 +197,7 @@ macro_rules! bop {
     };
 }
 impl Ir {
-    pub fn new(device: &Arc<screen_13::driver::Device>) -> Self {
+    pub fn new_sc13(device: &Arc<screen_13::driver::Device>) -> Self {
         Self {
             backend: Backend {
                 device: device.clone(),
@@ -206,7 +206,7 @@ impl Ir {
             vars: Vec::default(),
         }
     }
-    pub fn new_sc13() -> Self {
+    pub fn new() -> Self {
         let cfg = screen_13::prelude::DriverConfig::new().build();
         let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
         Self {

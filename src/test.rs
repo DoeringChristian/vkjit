@@ -7,10 +7,7 @@ mod test {
 
     #[test]
     fn test_add() {
-        let cfg = DriverConfig::new().build();
-        let device = Arc::new(Device::new(cfg).unwrap());
-
-        let mut ir = Ir::new(&device);
+        let mut ir = Ir::new();
 
         let x = ir.arange(VarType::Float32, 3);
         let y = ir.arange(VarType::Float32, 3);
