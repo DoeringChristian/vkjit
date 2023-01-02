@@ -450,6 +450,7 @@ impl Ir {
         cast_slice(slice)
     }
     pub fn eval(&mut self, schedule: Vec<VarId>) -> Vec<VarId> {
+        #[cfg(test)]
         println!("{:#?}", self);
         let mut k = Kernel::new();
         let res = k.compile(self, schedule);
@@ -1153,6 +1154,7 @@ impl Kernel {
     }
     pub fn record_render_graph(self, ir: &Ir, graph: &mut RenderGraph) {
         let module = self.b.module();
+        #[cfg(test)]
         println!("{}", module.disassemble());
 
         let spv = module.assemble();
