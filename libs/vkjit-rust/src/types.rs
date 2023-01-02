@@ -32,17 +32,29 @@ macro_rules! var {
 macro_rules! rs_bop {
     ($ty:ident, $op:ident) => {
         paste! {
-            impl $op for $ty {
+            impl<Rhs: Into<Self>> $op<Rhs> for $ty {
                 type Output = $ty;
 
-                fn [<$op:lower>](self, rhs: Self) -> Self::Output{
-                    Self(IR.lock().unwrap().[<$op:lower>](self.0, rhs.0))
+                fn [<$op:lower>](self, rhs: Rhs) -> Self::Output{
+                    Self(IR.lock().unwrap().[<$op:lower>](self.0, rhs.into().0))
                 }
             }
 
-            impl [<$op Assign>] for $ty{
-                fn [<$op:lower _assign>](&mut self, rhs: Self){
-                    *self = self.[<$op:lower>](rhs);
+            impl<Rhs: Into<Self>> [<$op Assign>]<Rhs> for $ty{
+                fn [<$op:lower _assign>](&mut self, rhs: Rhs){
+                    *self = self.[<$op:lower>](rhs.into());
+                }
+            }
+        }
+    };
+}
+
+macro_rules! bop {
+    ($ty:ident, $op:ident) => {
+        paste! {
+            impl $ty{
+                pub fn [<$op:lower>](self, other: impl Into<Self>) -> Bool{
+                    Bool(IR.lock().unwrap().[<$op:lower>](self.0, other.into().0))
                 }
             }
         }
@@ -91,18 +103,6 @@ macro_rules! select {
         impl $ty {
             pub fn select(self, other: Self, condition: Bool) -> Self {
                 Self(IR.lock().unwrap().select(condition.0, self.0, other.0))
-            }
-        }
-    };
-}
-
-macro_rules! bop {
-    ($ty:ident, $op:ident) => {
-        paste! {
-            impl $ty{
-                pub fn [<$op:lower>](self, other: Self) -> Bool{
-                    Bool(IR.lock().unwrap().[<$op:lower>](self.0, other.0))
-                }
             }
         }
     };
