@@ -131,4 +131,16 @@ mod test {
 
         assert_eq!(ir.as_slice::<f32>(y), &[0., 1., 2., 0., 0.]);
     }
+
+    #[test]
+    fn cast_u32_to_f32() {
+        let mut ir = Ir::new();
+
+        let x = ir.arange(VarType::UInt32, 3);
+        let y = ir.cast(x, VarType::Float32);
+
+        let res = ir.eval(vec![y]);
+
+        assert_eq!(ir.as_slice::<f32>(res[0]), &[0., 1., 2.]);
+    }
 }
