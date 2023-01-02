@@ -6,6 +6,19 @@ mod test {
     use screen_13::prelude::*;
 
     #[test]
+    fn test_linspace_f32() {
+        let mut ir = Ir::new();
+
+        let start = ir.const_f32(2.);
+        let stop = ir.const_f32(4.);
+        let x = ir.linspace(VarType::Float32, start, stop, 4);
+
+        let res = ir.eval(vec![x]);
+
+        assert_eq!(ir.as_slice::<f32>(res[0]), &[2., 2.5, 3., 3.5]);
+    }
+
+    #[test]
     fn test_add_f32() {
         let mut ir = Ir::new();
 

@@ -273,8 +273,12 @@ impl Ir {
     pub fn arange(&mut self, ty: VarType, num: usize) -> VarId {
         self.new_var(Op::Arange(num), vec![], ty)
     }
-    pub fn linspace(&mut self, ty: VarType, start_id: VarId, stop_id: VarId, num_id: VarId) {
-        todo!()
+    pub fn linspace(&mut self, ty: VarType, start_id: VarId, stop_id: VarId, num: usize) -> VarId {
+        let len = self.sub(stop_id, start_id);
+        let x = self.arange(ty, num);
+        let x = self.div(x, len);
+        let x = self.add(x, start_id);
+        x
     }
     pub fn zeros(&mut self, ty: VarType) -> VarId {
         match ty {
