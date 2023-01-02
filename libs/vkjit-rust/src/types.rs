@@ -77,6 +77,11 @@ macro_rules! from {
                     Self(IR.lock().unwrap().[<array_ $ty:lower>](value))
                 }
             }
+            impl<const N: usize> From<[[<$ty:lower>]; N]> for $ty{
+                fn from(value: [[<$ty:lower>]; N]) -> Self {
+                    Self(IR.lock().unwrap().[<array_ $ty:lower>](&value))
+                }
+            }
         }
     };
 }
