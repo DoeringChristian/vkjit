@@ -29,7 +29,7 @@ macro_rules! var {
     };
 }
 
-macro_rules! bop {
+macro_rules! rs_bop {
     ($ty:ident, $op:ident) => {
         paste! {
             impl $op for $ty {
@@ -85,28 +85,28 @@ var!(F32);
 
 from!(F32);
 
-bop!(F32, Add);
-bop!(F32, Sub);
-bop!(F32, Mul);
-bop!(F32, Div);
+rs_bop!(F32, Add);
+rs_bop!(F32, Sub);
+rs_bop!(F32, Mul);
+rs_bop!(F32, Div);
 
 var!(U32);
 
 from!(U32);
 
-bop!(U32, Add);
-bop!(U32, Sub);
-bop!(U32, Mul);
-bop!(U32, Div);
+rs_bop!(U32, Add);
+rs_bop!(U32, Sub);
+rs_bop!(U32, Mul);
+rs_bop!(U32, Div);
 
 var!(I32);
 
 from!(I32);
 
-bop!(I32, Add);
-bop!(I32, Sub);
-bop!(I32, Mul);
-bop!(I32, Div);
+rs_bop!(I32, Add);
+rs_bop!(I32, Sub);
+rs_bop!(I32, Mul);
+rs_bop!(I32, Div);
 
 dbg!(F32);
 dbg!(U32);
