@@ -624,6 +624,9 @@ impl Kernel {
     /// Traverse kernel and determine size. Panics if kernel size mismatches
     ///
     fn record_kernel_size(&mut self, id: VarId, ir: &Ir) {
+        if self.num.is_some() {
+            return;
+        }
         let var = &ir.var(id);
         match var.op {
             Op::Binding => {
@@ -646,16 +649,18 @@ impl Kernel {
         if self.arrays.contains_key(&id) {
             return;
         }
+        //println!("{:?}", id);
         let var = &ir.var(id);
         match var.op {
             Op::Binding => {
-                for id in var.side_effects.iter() {
-                    self.record_bindings(*id, ir, access);
-                }
+                //for id in var.side_effects.iter() {
+                //self.record_bindings(*id, ir, access);
+                //}
                 self.record_binding(id, ir, access);
             }
             _ => {
-                for id in var.deps.iter().chain(var.side_effects.iter()) {
+                for id in var.deps.iter() {
+                    //.chain(var.side_effects.iter()) {
                     self.record_bindings(*id, ir, access);
                 }
             }
@@ -995,8 +1000,14 @@ impl Kernel {
         }
         let var = &ir.var(id);
 
-        for id in var.deps.iter().chain(var.side_effects.iter()) {
+        for id in var.deps.iter() {
             self.record_spv_vars(*id, ir);
+        }
+        for id in var.side_effects.iter() {
+            match ir.var(*id).op {
+                Op::Binding => {}
+                _ => self.record_spv_vars(*id, ir),
+            }
         }
 
         let ty = var.ty.to_spirv(&mut self.b);
