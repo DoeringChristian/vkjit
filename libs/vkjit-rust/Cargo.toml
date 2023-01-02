@@ -1,9 +1,9 @@
 [package]
-name = "vkjit03"
+name = "vkjit-rust"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-vkjit-core = {path = "libs/vkjit-core"}
+vkjit-core = {path = "../vkjit-core"}
