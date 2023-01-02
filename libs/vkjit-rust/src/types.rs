@@ -81,33 +81,78 @@ macro_rules! from {
     };
 }
 
-var!(F32);
+macro_rules! select {
+    ($ty:ident) => {
+        impl $ty {
+            pub fn select(self, other: Self, condition: Bool) -> Self {
+                Self(IR.lock().unwrap().select(condition.0, self.0, other.0))
+            }
+        }
+    };
+}
 
-from!(F32);
+macro_rules! bop {
+    ($ty:ident, $op:ident) => {
+        paste! {
+            impl $ty{
+                pub fn [<$op:lower>](self, other: Self) -> Bool{
+                    Bool(IR.lock().unwrap().[<$op:lower>](self.0, other.0))
+                }
+            }
+        }
+    };
+}
+
+var!(F32);
 
 rs_bop!(F32, Add);
 rs_bop!(F32, Sub);
 rs_bop!(F32, Mul);
 rs_bop!(F32, Div);
 
-var!(U32);
+bop!(F32, Lt);
+bop!(F32, Gt);
+bop!(F32, Eq);
+bop!(F32, Leq);
+bop!(F32, Geq);
+bop!(F32, Neq);
 
-from!(U32);
+dbg!(F32);
+from!(F32);
+select!(F32);
+
+var!(U32);
 
 rs_bop!(U32, Add);
 rs_bop!(U32, Sub);
 rs_bop!(U32, Mul);
 rs_bop!(U32, Div);
 
-var!(I32);
+bop!(U32, Lt);
+bop!(U32, Gt);
+bop!(U32, Eq);
+bop!(U32, Leq);
+bop!(U32, Geq);
+bop!(U32, Neq);
 
-from!(I32);
+dbg!(U32);
+from!(U32);
+select!(U32);
+
+var!(I32);
 
 rs_bop!(I32, Add);
 rs_bop!(I32, Sub);
 rs_bop!(I32, Mul);
 rs_bop!(I32, Div);
 
-dbg!(F32);
-dbg!(U32);
+bop!(I32, Lt);
+bop!(I32, Gt);
+bop!(I32, Eq);
+bop!(I32, Leq);
+bop!(I32, Geq);
+bop!(I32, Neq);
+
 dbg!(I32);
+from!(I32);
+select!(I32);
