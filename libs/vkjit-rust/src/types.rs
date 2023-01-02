@@ -36,13 +36,15 @@ macro_rules! rs_bop {
                 type Output = $ty;
 
                 fn [<$op:lower>](self, rhs: Rhs) -> Self::Output{
-                    Self(IR.lock().unwrap().[<$op:lower>](self.0, rhs.into().0))
+                    let rhs = rhs.into();
+                    Self(IR.lock().unwrap().[<$op:lower>](self.0, rhs.0))
                 }
             }
 
             impl<Rhs: Into<Self>> [<$op Assign>]<Rhs> for $ty{
                 fn [<$op:lower _assign>](&mut self, rhs: Rhs){
-                    *self = self.[<$op:lower>](rhs.into());
+                    let rhs = rhs.into();
+                    *self = self.[<$op:lower>](rhs);
                 }
             }
         }
@@ -53,8 +55,9 @@ macro_rules! bop {
     ($ty:ident, $op:ident) => {
         paste! {
             impl $ty{
-                pub fn [<$op:lower>](self, other: impl Into<Self>) -> Bool{
-                    Bool(IR.lock().unwrap().[<$op:lower>](self.0, other.into().0))
+                pub fn [<$op:lower>](self, rhs: impl Into<Self>) -> Bool{
+                    let rhs = rhs.into();
+                    Bool(IR.lock().unwrap().[<$op:lower>](self.0, rhs.0))
                 }
             }
         }
