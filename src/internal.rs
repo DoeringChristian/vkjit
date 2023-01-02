@@ -705,6 +705,26 @@ impl Kernel {
                         VarType::Float32 => self.b.f_add(ty, None, lhs, rhs).unwrap(),
                         _ => panic!("Addition not defined for type {:?}", var.ty),
                     },
+                    Bop::Sub => match var.ty {
+                        VarType::Int32 | VarType::UInt32 => {
+                            self.b.i_sub(ty, None, lhs, rhs).unwrap()
+                        }
+                        VarType::Float32 => self.b.f_sub(ty, None, lhs, rhs).unwrap(),
+                        _ => panic!("Subtraction not defined for type {:?}", var.ty),
+                    },
+                    Bop::Mul => match var.ty {
+                        VarType::Int32 | VarType::UInt32 => {
+                            self.b.i_mul(ty, None, lhs, rhs).unwrap()
+                        }
+                        VarType::Float32 => self.b.f_mul(ty, None, lhs, rhs).unwrap(),
+                        _ => panic!("Multiplication not defined for type {:?}", var.ty),
+                    },
+                    Bop::Div => match var.ty {
+                        VarType::Int32 => self.b.s_div(ty, None, lhs, rhs).unwrap(),
+                        VarType::UInt32 => self.b.u_div(ty, None, lhs, rhs).unwrap(),
+                        VarType::Float32 => self.b.f_div(ty, None, lhs, rhs).unwrap(),
+                        _ => panic!("Division not defined for type {:?}", var.ty),
+                    },
                     Bop::Lt => match lhs_ty {
                         VarType::Float32 => self.b.f_ord_less_than(ty, None, lhs, rhs).unwrap(),
                         VarType::Int32 => self.b.s_less_than(ty, None, lhs, rhs).unwrap(),
