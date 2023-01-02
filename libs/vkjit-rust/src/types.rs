@@ -104,7 +104,9 @@ macro_rules! from {
 macro_rules! select {
     ($ty:ident) => {
         impl $ty {
-            pub fn select(self, other: Self, condition: Bool) -> Self {
+            pub fn select(self, other: impl Into<Self>, condition: impl Into<Bool>) -> Self {
+                let other = other.into();
+                let condition = condition.into();
                 Self(IR.lock().unwrap().select(condition.0, self.0, other.0))
             }
         }
