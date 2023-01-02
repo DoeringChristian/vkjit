@@ -57,6 +57,7 @@ enum Op {
     Gather,
     Scatter,
     Select,
+    Cast,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -311,6 +312,9 @@ impl Ir {
             VarType::Float32 => self.const_f32(1.),
             _ => unimplemented!(),
         }
+    }
+    pub fn cast(&mut self, src: VarId, ty: VarType) -> VarId {
+        self.new_var(Op::Cast, vec![src], ty)
     }
     pub fn struct_init(&mut self, vars: Vec<VarId>) -> VarId {
         let elems = vars
@@ -777,20 +781,20 @@ impl Kernel {
                             self.b.i_sub(ty, None, lhs, rhs).unwrap()
                         }
                         VarType::Float32 => self.b.f_sub(ty, None, lhs, rhs).unwrap(),
-                        _ => panic!("Subtraction not defined for type {:?}", var.ty),
+                        _ => panic!("Addition not defined for type {:?}", var.ty),
                     },
                     Bop::Mul => match var.ty {
                         VarType::Int32 | VarType::UInt32 => {
                             self.b.i_mul(ty, None, lhs, rhs).unwrap()
                         }
                         VarType::Float32 => self.b.f_mul(ty, None, lhs, rhs).unwrap(),
-                        _ => panic!("Multiplication not defined for type {:?}", var.ty),
+                        _ => panic!("Addition not defined for type {:?}", var.ty),
                     },
                     Bop::Div => match var.ty {
                         VarType::Int32 => self.b.s_div(ty, None, lhs, rhs).unwrap(),
                         VarType::UInt32 => self.b.u_div(ty, None, lhs, rhs).unwrap(),
                         VarType::Float32 => self.b.f_div(ty, None, lhs, rhs).unwrap(),
-                        _ => panic!("Division not defined for type {:?}", var.ty),
+                        _ => panic!("Addition not defined for type {:?}", var.ty),
                     },
                     Bop::Lt => match lhs_ty {
                         VarType::Float32 => self.b.f_ord_less_than(ty, None, lhs, rhs).unwrap(),
@@ -838,6 +842,41 @@ impl Kernel {
                 };
                 self.op_results.insert(id, ret);
                 ret
+            }
+            Op::Cast => {
+                let src_ty = &ir.var(var.deps[0]).ty;
+                let src_spv = self.record_ops(var.deps[0], ir);
+                match src_ty {
+                    VarType::Float32 => match var.ty {
+                        VarType::Float32 => src_spv,
+                        VarType::UInt32 => {
+                            let ty = var.ty.to_spirv(&mut self.b);
+                            self.b.convert_u_to_f(ty, None, src_spv).unwrap()
+                        }
+                        VarType::Int32 => {
+                            let ty = var.ty.to_spirv(&mut self.b);
+                            self.b.convert_s_to_f(ty, None, src_spv).unwrap()
+                        }
+                        _ => unimplemented!(),
+                    },
+                    VarType::UInt32 => match var.ty {
+                        VarType::UInt32 | VarType::Int32 => src_spv,
+                        VarType::Float32 => {
+                            let ty = var.ty.to_spirv(&mut self.b);
+                            self.b.convert_u_to_f(ty, None, src_spv).unwrap()
+                        }
+                        _ => unimplemented!(),
+                    },
+                    VarType::Int32 => match var.ty {
+                        VarType::UInt32 | VarType::Int32 => src_spv,
+                        VarType::Float32 => {
+                            let ty = var.ty.to_spirv(&mut self.b);
+                            self.b.convert_s_to_f(ty, None, src_spv).unwrap()
+                        }
+                        _ => unimplemented!(),
+                    },
+                    _ => unimplemented!(),
+                }
             }
             Op::GetAttr(elem) => {
                 //https://shader-playground.timjones.io/76ecd3898e50c0012918f6a080be6134
