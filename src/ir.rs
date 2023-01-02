@@ -154,13 +154,19 @@ pub struct Var {
     // Dependencies
     deps: Vec<usize>,
     side_effects: Vec<usize>,
-    pub array: Option<Arc<array::Array>>,
+    //pub array: Option<Arc<array::Array>>,
     ty: VarType,
 }
 
 #[derive(Debug)]
-pub struct Ir {
-    device: Arc<screen_13::driver::Device>,
+pub struct Backend {
+    device: Arc<screen_13::prelude::Device>,
+    arrays: HashMap<usize, array::Array>,
+}
+
+#[derive(Debug)]
+pub struct Internal {
+    backend: Backend,
     vars: Vec<Var>,
 }
 
@@ -177,15 +183,18 @@ macro_rules! bop {
         }
     };
 }
-impl Ir {
+impl Internal {
     pub fn new(device: &Arc<screen_13::driver::Device>) -> Self {
         Self {
-            device: device.clone(),
+            backend: Backend {
+                device: device.clone(),
+                arrays: HashMap::default(),
+            },
             vars: Vec::default(),
         }
     }
-    pub fn array(&self, id: usize) -> &Arc<array::Array> {
-        self.vars[id].array.as_ref().unwrap()
+    pub fn array(&self, id: usize) -> &array::Array {
+        &self.backend.arrays[&id]
     }
     fn new_var(&mut self, op: Op, dependencies: Vec<usize>, ty: VarType) -> usize {
         self.push_var(Var {
@@ -193,7 +202,6 @@ impl Ir {
             side_effects: Vec::new(),
             op,
             ty,
-            array: None,
         })
     }
     fn push_var(&mut self, var: Var) -> usize {
@@ -281,17 +289,21 @@ impl Ir {
         self.new_var(Op::Const(Const::Bool(val)), vec![], VarType::Bool)
     }
     pub fn array_f32(&mut self, data: &[f32]) -> usize {
-        self.push_var(Var {
+        let id = self.push_var(Var {
             ty: VarType::Float32,
             op: Op::Binding,
             deps: vec![],
             side_effects: vec![],
-            array: Some(Arc::new(Array::from_slice(
-                &self.device,
+        });
+        self.backend.arrays.insert(
+            id,
+            Array::from_slice(
+                &self.backend.device,
                 data,
                 vk::BufferUsageFlags::STORAGE_BUFFER,
-            ))),
-        })
+            ),
+        );
+        id
     }
     pub fn getattr(&mut self, src_id: usize, idx: usize) -> usize {
         let src = &self.vars[src_id];
@@ -330,7 +342,7 @@ impl Ir {
     }
     pub fn print_buffer(&self, id: usize) {
         let var = &self.vars[id];
-        let slice = screen_13::prelude::Buffer::mapped_slice(&var.array.as_ref().unwrap().buf);
+        let slice = screen_13::prelude::Buffer::mapped_slice(&self.backend.arrays[&id].buf);
         match var.ty {
             VarType::Float32 => {
                 println!("{:?}", cast_slice::<_, f32>(slice))
@@ -450,7 +462,7 @@ impl Kernel {
         self.array_structs.insert(ty.clone(), ty_struct_ptr);
         ty_struct_ptr
     }
-    fn record_binding(&mut self, id: usize, ir: &Ir, access: Access) -> u32 {
+    fn record_binding(&mut self, id: usize, ir: &Internal, access: Access) -> u32 {
         if self.arrays.contains_key(&id) {
             return self.arrays[&id];
         }
@@ -482,7 +494,7 @@ impl Kernel {
     /// Return a pointer to the binding at an index
     /// Note that idx is a spirv variable
     ///
-    fn access_binding_at(&mut self, id: usize, ir: &Ir, idx: u32) -> u32 {
+    fn access_binding_at(&mut self, id: usize, ir: &Internal, idx: u32) -> u32 {
         println!("{}", id);
         let var = &ir.vars[id];
         let ty = var.ty.to_spirv(&mut self.b);
@@ -497,7 +509,7 @@ impl Kernel {
         ptr
     }
 
-    fn access_binding(&mut self, id: usize, ir: &Ir) -> u32 {
+    fn access_binding(&mut self, id: usize, ir: &Internal) -> u32 {
         let idx = self.idx.unwrap();
         self.access_binding_at(id, ir, idx)
     }
@@ -514,11 +526,11 @@ impl Kernel {
     ///
     /// Traverse kernel and determine size. Panics if kernel size mismatches
     ///
-    fn record_kernel_size(&mut self, id: usize, ir: &Ir) {
+    fn record_kernel_size(&mut self, id: usize, ir: &Internal) {
         let var = &ir.vars[id];
         match var.op {
             Op::Binding => {
-                self.set_num(var.array.as_ref().unwrap().count());
+                self.set_num(ir.backend.arrays[&id].count());
             }
             Op::Arange(num) => {
                 self.set_num(num);
@@ -533,7 +545,7 @@ impl Kernel {
     ///
     /// Records bindings before main function.
     ///
-    fn record_bindings(&mut self, id: usize, ir: &Ir, access: Access) {
+    fn record_bindings(&mut self, id: usize, ir: &Internal, access: Access) {
         if self.arrays.contains_key(&id) {
             return;
         }
@@ -630,7 +642,7 @@ impl Kernel {
     ///
     /// Main record loop for recording variable operations.
     ///
-    fn record_ops(&mut self, id: usize, ir: &Ir) -> u32 {
+    fn record_ops(&mut self, id: usize, ir: &Internal) -> u32 {
         if self.op_results.contains_key(&id) {
             return self.op_results[&id];
         }
@@ -834,7 +846,7 @@ impl Kernel {
     ///
     /// Record variables needed to store structs and variables for select.
     ///
-    pub fn record_spv_vars(&mut self, id: usize, ir: &Ir) {
+    pub fn record_spv_vars(&mut self, id: usize, ir: &Internal) {
         if self.vars.contains_key(&id) {
             return;
         }
@@ -857,7 +869,7 @@ impl Kernel {
             _ => {}
         };
     }
-    pub fn compile(&mut self, ir: &mut Ir, schedule: Vec<usize>) -> Vec<usize> {
+    pub fn compile(&mut self, ir: &mut Internal, schedule: Vec<usize>) -> Vec<usize> {
         // Determine kernel size
         for id in schedule.iter() {
             self.record_kernel_size(*id, ir);
@@ -891,26 +903,31 @@ impl Kernel {
             )],
         );
 
-        // Reocrd bindings.
-        // Bindings need to be prerecorded before main function.
+        // Add new result variables and record bindings.
         let schedule = schedule
             .iter()
             .map(|id1| {
                 let ty = &ir.vars[*id1].ty.clone();
-                let device = ir.device.clone();
+                let device = ir.backend.device.clone();
                 let id2 = ir.push_var(Var {
                     deps: vec![],
                     side_effects: vec![],
                     op: Op::Binding,
-                    array: Some(Arc::new(Array::create(
+                    ty: ty.clone(),
+                });
+                // Insert corresponding array
+                ir.backend.arrays.insert(
+                    id2,
+                    Array::create(
                         &device,
                         ty,
                         self.num.expect("Could not determine size of kernel!"),
                         vk::BufferUsageFlags::STORAGE_BUFFER,
-                    ))),
-                    ty: ty.clone(),
-                });
+                    ),
+                );
+                // Record binding for all bound variables.
                 self.record_bindings(*id1, ir, Access::Read);
+                // Rcord bindings for result variables.
                 self.record_bindings(id2, ir, Access::Write);
                 (*id1, id2)
             })
@@ -986,12 +1003,12 @@ impl Kernel {
 
         result
     }
-    pub fn record_render_graph(self, ir: &Ir, graph: &mut RenderGraph) {
+    pub fn record_render_graph(self, ir: &Internal, graph: &mut RenderGraph) {
         let module = self.b.module();
         println!("{}", module.disassemble());
 
         let spv = module.assemble();
-        let pipeline = Arc::new(ComputePipeline::create(&ir.device, spv).unwrap());
+        let pipeline = Arc::new(ComputePipeline::create(&ir.backend.device, spv).unwrap());
 
         let nodes = self
             .bindings
@@ -1023,7 +1040,7 @@ impl Kernel {
         })
         .submit_pass();
     }
-    pub fn execute(self, ir: &Ir, device: &Arc<screen_13::prelude::Device>) {
+    pub fn execute(self, ir: &Internal, device: &Arc<screen_13::prelude::Device>) {
         let mut graph = RenderGraph::new();
         let mut pool = LazyPool::new(device);
 

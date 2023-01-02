@@ -8,7 +8,6 @@ use crate::ir::VarType;
 #[derive(Debug)]
 pub struct Array {
     pub buf: Arc<Buffer>,
-    device: Arc<Device>,
     count: usize,
 }
 
@@ -24,7 +23,6 @@ impl Array {
         Self {
             buf: Arc::new(buf),
             count,
-            device: device.clone(),
         }
     }
     pub fn from_slice<T: AsStd140>(
@@ -44,7 +42,6 @@ impl Array {
         Self {
             buf,
             count: data.len(),
-            device: device.clone(),
         }
     }
     #[inline]
