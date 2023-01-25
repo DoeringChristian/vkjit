@@ -484,9 +484,9 @@ pub struct Kernel {
     pub vars: HashMap<VarId, u32>,
     pub num: Option<usize>,
 
-    pub bindings: HashMap<VarId, Binding>,
+    //pub bindings: HashMap<VarId, Binding>,
     pub arrays: HashMap<VarId, u32>,
-    pub array_structs: HashMap<VarType, u32>,
+    //pub array_structs: HashMap<VarType, u32>,
     pub structs: HashMap<Vec<VarType>, u32>,
 
     // Variables used by many kernels
@@ -500,7 +500,7 @@ impl Debug for Kernel {
         f.debug_struct("Kernel")
             .field("vars", &self.op_results)
             .field("num", &self.num)
-            .field("bindings", &self.bindings)
+            //.field("bindings", &self.bindings)
             .field("idx", &self.idx)
             .field("global_invocation_id", &self.global_invocation_id)
             .finish()
@@ -513,9 +513,9 @@ impl Kernel {
             b: rspirv::dr::Builder::new(),
             op_results: HashMap::default(),
             vars: HashMap::default(),
-            bindings: HashMap::default(),
+            //bindings: HashMap::default(),
             arrays: HashMap::default(),
-            array_structs: HashMap::default(),
+            //array_structs: HashMap::default(),
             structs: HashMap::default(),
             num: None,
             idx: None,
@@ -523,101 +523,101 @@ impl Kernel {
             traversal_set: HashSet::default(),
         }
     }
-    fn binding(&mut self, id: VarId, access: Access) -> Binding {
-        if !self.bindings.contains_key(&id) {
-            let binding = Binding {
-                set: self.bindings.len() as u32,
-                binding: 0,
-                access,
-            };
-            self.bindings.insert(id, binding);
-            binding
-        } else {
-            self.bindings[&id]
-        }
-    }
-    fn record_array_struct_ty(&mut self, ty: &VarType) -> u32 {
-        if self.array_structs.contains_key(ty) {
-            return self.array_structs[ty];
-        }
-        let spv_ty = ty.to_spirv(&mut self.b);
-
-        let ty_rta = self.b.type_runtime_array(spv_ty);
-        let ty_struct = self.b.type_struct(vec![ty_rta]);
-        let ty_struct_ptr = self
-            .b
-            .type_pointer(None, spirv::StorageClass::Uniform, ty_struct);
-
-        let stride = ty.stride();
-        self.b.decorate(
-            ty_rta,
-            spirv::Decoration::ArrayStride,
-            vec![rspirv::dr::Operand::LiteralInt32(stride as u32)],
-        );
-
-        self.b
-            .decorate(ty_struct, spirv::Decoration::BufferBlock, vec![]);
-        self.b.member_decorate(
-            ty_struct,
-            0,
-            spirv::Decoration::Offset,
-            vec![rspirv::dr::Operand::LiteralInt32(0)],
-        );
-        self.b.name(ty_struct, ty.name());
-
-        self.array_structs.insert(ty.clone(), ty_struct_ptr);
-        ty_struct_ptr
-    }
-    fn record_binding(&mut self, id: VarId, ir: &Ir, access: Access) -> u32 {
-        if self.arrays.contains_key(&id) {
-            return self.arrays[&id];
-        }
-
-        let var = &ir.var(id);
-
-        //self.set_num(var.array.as_ref().unwrap().count());
-        // https://shader-playground.timjones.io/3af32078f879d8599902e46b919dbfe3
-        let binding = self.binding(id, access);
-        let ty_struct_ptr = self.record_array_struct_ty(&var.ty);
-
-        let st = self
-            .b
-            .variable(ty_struct_ptr, None, spirv::StorageClass::Uniform, None);
-        self.b.decorate(
-            st,
-            spirv::Decoration::Binding,
-            vec![rspirv::dr::Operand::LiteralInt32(binding.binding)],
-        );
-        self.b.decorate(
-            st,
-            spirv::Decoration::DescriptorSet,
-            vec![rspirv::dr::Operand::LiteralInt32(binding.set)],
-        );
-        self.arrays.insert(id, st);
-        st
-    }
+    // fn binding(&mut self, id: VarId, access: Access) -> Binding {
+    //     if !self.bindings.contains_key(&id) {
+    //         let binding = Binding {
+    //             set: self.bindings.len() as u32,
+    //             binding: 0,
+    //             access,
+    //         };
+    //         self.bindings.insert(id, binding);
+    //         binding
+    //     } else {
+    //         self.bindings[&id]
+    //     }
+    // }
+    // fn record_array_struct_ty(&mut self, ty: &VarType) -> u32 {
+    //     if self.array_structs.contains_key(ty) {
+    //         return self.array_structs[ty];
+    //     }
+    //     let spv_ty = ty.to_spirv(&mut self.b);
+    //
+    //     let ty_rta = self.b.type_runtime_array(spv_ty);
+    //     let ty_struct = self.b.type_struct(vec![ty_rta]);
+    //     let ty_struct_ptr = self
+    //         .b
+    //         .type_pointer(None, spirv::StorageClass::Uniform, ty_struct);
+    //
+    //     let stride = ty.stride();
+    //     self.b.decorate(
+    //         ty_rta,
+    //         spirv::Decoration::ArrayStride,
+    //         vec![rspirv::dr::Operand::LiteralInt32(stride as u32)],
+    //     );
+    //
+    //     self.b
+    //         .decorate(ty_struct, spirv::Decoration::BufferBlock, vec![]);
+    //     self.b.member_decorate(
+    //         ty_struct,
+    //         0,
+    //         spirv::Decoration::Offset,
+    //         vec![rspirv::dr::Operand::LiteralInt32(0)],
+    //     );
+    //     self.b.name(ty_struct, ty.name());
+    //
+    //     self.array_structs.insert(ty.clone(), ty_struct_ptr);
+    //     ty_struct_ptr
+    // }
+    // fn record_binding(&mut self, id: VarId, ir: &Ir, access: Access) -> u32 {
+    //     if self.arrays.contains_key(&id) {
+    //         return self.arrays[&id];
+    //     }
+    //
+    //     let var = &ir.var(id);
+    //
+    //     //self.set_num(var.array.as_ref().unwrap().count());
+    //     // https://shader-playground.timjones.io/3af32078f879d8599902e46b919dbfe3
+    //     let binding = self.binding(id, access);
+    //     let ty_struct_ptr = self.record_array_struct_ty(&var.ty);
+    //
+    //     let st = self
+    //         .b
+    //         .variable(ty_struct_ptr, None, spirv::StorageClass::Uniform, None);
+    //     self.b.decorate(
+    //         st,
+    //         spirv::Decoration::Binding,
+    //         vec![rspirv::dr::Operand::LiteralInt32(binding.binding)],
+    //     );
+    //     self.b.decorate(
+    //         st,
+    //         spirv::Decoration::DescriptorSet,
+    //         vec![rspirv::dr::Operand::LiteralInt32(binding.set)],
+    //     );
+    //     self.arrays.insert(id, st);
+    //     st
+    // }
     ///
     /// Return a pointer to the binding at an index
     /// Note that idx is a spirv variable
     ///
-    fn access_binding_at(&mut self, id: VarId, ir: &Ir, idx: u32) -> u32 {
-        let var = &ir.var(id);
-        let ty = var.ty.to_spirv(&mut self.b);
-        let ty_int = self.b.type_int(32, 1);
-        let int_0 = self.b.constant_u32(ty_int, 0);
-
-        let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
-        let ptr = self
-            .b
-            .access_chain(ptr_ty, None, self.arrays[&id], vec![int_0, idx])
-            .unwrap();
-        ptr
-    }
-
-    fn access_binding(&mut self, id: VarId, ir: &Ir) -> u32 {
-        let idx = self.idx.unwrap();
-        self.access_binding_at(id, ir, idx)
-    }
+    // fn access_binding_at(&mut self, id: VarId, ir: &Ir, idx: u32) -> u32 {
+    //     let var = &ir.var(id);
+    //     let ty = var.ty.to_spirv(&mut self.b);
+    //     let ty_int = self.b.type_int(32, 1);
+    //     let int_0 = self.b.constant_u32(ty_int, 0);
+    //
+    //     let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
+    //     let ptr = self
+    //         .b
+    //         .access_chain(ptr_ty, None, self.arrays[&id], vec![int_0, idx])
+    //         .unwrap();
+    //     ptr
+    // }
+    //
+    // fn access_binding(&mut self, id: VarId, ir: &Ir) -> u32 {
+    //     let idx = self.idx.unwrap();
+    //     self.access_binding_at(id, ir, idx)
+    // }
     fn set_num(&mut self, num: usize) {
         if let Some(num_) = self.num {
             assert!(
