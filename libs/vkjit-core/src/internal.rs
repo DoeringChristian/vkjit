@@ -60,6 +60,26 @@ enum Op {
     Cast,
 }
 
+pub trait AsVarType {
+    fn as_var_type() -> VarType;
+}
+
+impl AsVarType for u32 {
+    fn as_var_type() -> VarType {
+        VarType::U32
+    }
+}
+impl AsVarType for i32 {
+    fn as_var_type() -> VarType {
+        VarType::I32
+    }
+}
+impl AsVarType for f32 {
+    fn as_var_type() -> VarType {
+        VarType::F32
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum VarType {
     Struct(Vec<VarType>), // Structs are stored as pointer and StructInit returns a pointer to a
@@ -101,20 +121,20 @@ impl VarType {
             _ => unimplemented!(),
         }
     }
-    #[allow(unused)]
-    pub fn from_rs<T: 'static>() -> Self {
-        let ty_f32 = std::any::TypeId::of::<f32>();
-        let ty_u32 = std::any::TypeId::of::<u32>();
-        let ty_i32 = std::any::TypeId::of::<i32>();
-        let ty_bool = std::any::TypeId::of::<bool>();
-        match std::any::TypeId::of::<T>() {
-            ty_f32 => Self::F32,
-            ty_u32 => Self::U32,
-            ty_i32 => Self::I32,
-            ty_bool => Self::Bool,
-            _ => unimplemented!(),
-        }
-    }
+    // #[allow(unused)]
+    // pub fn from_rs<T: 'static>() -> Self {
+    //     let ty_f32 = std::any::TypeId::of::<f32>();
+    //     let ty_u32 = std::any::TypeId::of::<u32>();
+    //     let ty_i32 = std::any::TypeId::of::<i32>();
+    //     let ty_bool = std::any::TypeId::of::<bool>();
+    //     match std::any::TypeId::of::<T>() {
+    //         ty_f32 => Self::F32,
+    //         ty_u32 => Self::U32,
+    //         ty_i32 => Self::I32,
+    //         ty_bool => Self::Bool,
+    //         _ => unimplemented!(),
+    //     }
+    // }
     pub fn type_id(&self) -> TypeId {
         match self {
             VarType::Bool => TypeId::of::<bool>(),
@@ -454,13 +474,70 @@ impl Ir {
         assert!(var.ty.type_id() == TypeId::of::<T>());
         cast_slice(slice)
     }
-    pub fn eval(&mut self, schedule: Vec<VarId>) -> Vec<VarId> {
+    pub fn eval(&mut self, schedule: &[VarId]) {
         #[cfg(test)]
         println!("{:#?}", self);
         let mut k = Kernel::new();
-        let res = k.compile(self, schedule);
-        k.execute(self);
-        res
+        let dst = k.compile(self, schedule);
+
+        // Record render graph
+        let mut graph = RenderGraph::new();
+        let mut pool = LazyPool::new(&self.backend.device);
+
+        let module = k.b.module();
+        #[cfg(test)]
+        println!("{}", module.disassemble());
+
+        let spv = module.assemble();
+        let pipeline = Arc::new(ComputePipeline::create(&self.backend.device, spv).unwrap());
+
+        // Collect nodes and corresponding bindings
+        let mut nodes = k
+            .bindings
+            .iter()
+            .map(|(id, binding)| {
+                let arr = self.array(*id).clone();
+                let node = graph.bind_node(&arr.buf);
+                (*binding, node)
+            })
+            .collect::<Vec<_>>();
+        nodes.extend(dst.iter().map(|(binding, arr)| {
+            let node = graph.bind_node(&arr.buf);
+            (*binding, node)
+        }));
+
+        let mut pass = graph.begin_pass("Eval kernel").bind_pipeline(&pipeline);
+        for (binding, node) in nodes {
+            match binding.access {
+                Access::Read => {
+                    pass = pass.read_descriptor((binding.set, binding.binding), node);
+                }
+                Access::Write => {
+                    pass = pass.write_descriptor((binding.set, binding.binding), node);
+                }
+            }
+        }
+        let num = k.num.unwrap();
+        pass.record_compute(move |compute, _| {
+            compute.dispatch(num as u32, 1, 1);
+        })
+        .submit_pass();
+
+        graph.resolve().submit(&mut pool, 0).unwrap();
+
+        unsafe { self.backend.device.device_wait_idle().unwrap() };
+
+        // Overwrite variables
+        for (i, (_, arr)) in dst.into_iter().enumerate() {
+            let id = schedule[i];
+            self.vars[id.0] = Var {
+                op: Op::Binding,
+                deps: vec![],
+                side_effects: vec![],
+                ty: arr.ty.clone(),
+            };
+            self.backend.arrays.insert(id, arr);
+        }
     }
     // Composite operations
 }
@@ -1027,7 +1104,7 @@ impl Kernel {
             _ => {}
         };
     }
-    pub fn compile(&mut self, ir: &mut Ir, schedule: Vec<VarId>) -> Vec<VarId> {
+    pub fn compile(&mut self, ir: &Ir, schedule: &[VarId]) -> Vec<(Binding, Array)> {
         // Determine kernel size
         for id in schedule.iter() {
             self.record_kernel_size(*id, ir);
@@ -1061,35 +1138,61 @@ impl Kernel {
             )],
         );
 
+        let dst = schedule
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                // Record bindings for source variables TODO: handle potential scatter events
+                self.traversal_set.clear();
+                self.record_bindings(*id, ir, Access::Read);
+
+                let ty = &ir.var(*id).ty.clone();
+
+                // Record dst bindings
+
+                let ty_struct_ptr = self.record_array_struct_ty(ty);
+
+                let binding = Binding {
+                    set: 1,
+                    binding: i as _,
+                    access: Access::Write,
+                };
+                let st = self
+                    .b
+                    .variable(ty_struct_ptr, None, spirv::StorageClass::Uniform, None);
+                self.b.decorate(
+                    st,
+                    spirv::Decoration::Binding,
+                    vec![rspirv::dr::Operand::LiteralInt32(binding.binding)],
+                );
+                self.b.decorate(
+                    st,
+                    spirv::Decoration::DescriptorSet,
+                    vec![rspirv::dr::Operand::LiteralInt32(binding.set)],
+                );
+
+                // Create dst arrays
+                let arr = Array::create(
+                    &ir.backend.device,
+                    ty,
+                    self.num.expect("Could not determine size of kernel!"),
+                    vk::BufferUsageFlags::STORAGE_BUFFER,
+                );
+                (arr, binding, st)
+            })
+            .collect::<Vec<_>>();
+
         // Add new result variables and record bindings.
         let schedule = schedule
             .iter()
-            .map(|id1| {
-                let ty = &ir.var(*id1).ty.clone();
+            .map(|id| {
+                let ty = &ir.var(*id).ty.clone();
                 let device = ir.backend.device.clone();
-                let id2 = ir.push_var(Var {
-                    deps: vec![],
-                    side_effects: vec![],
-                    op: Op::Binding,
-                    ty: ty.clone(),
-                });
-                // Insert corresponding array
-                ir.backend.arrays.insert(
-                    id2,
-                    Array::create(
-                        &device,
-                        ty,
-                        self.num.expect("Could not determine size of kernel!"),
-                        vk::BufferUsageFlags::STORAGE_BUFFER,
-                    ),
-                );
                 // Record binding for all bound variables.
                 self.traversal_set.clear();
-                self.record_bindings(*id1, ir, Access::Read);
+                self.record_bindings(*id, ir, Access::Read);
                 // Rcord bindings for result variables.
-                self.traversal_set.clear();
-                self.record_bindings(id2, ir, Access::Write);
-                (*id1, id2)
+                *id
             })
             .collect::<Vec<_>>();
 
@@ -1114,7 +1217,7 @@ impl Kernel {
 
         self.traversal_set.clear();
         for id in schedule.iter() {
-            self.record_spv_vars(id.0, ir);
+            self.record_spv_vars(*id, ir);
         }
 
         // Load x component of GlobalInvocationId as index.
@@ -1133,20 +1236,29 @@ impl Kernel {
 
         let schedule = schedule
             .iter()
-            .map(|(id1, id2)| {
-                let spv_id = self.record_ops(*id1, ir);
-                (*id2, spv_id)
+            .map(|id| {
+                let spv_id = self.record_ops(*id, ir);
+                spv_id
             })
             .collect::<Vec<_>>();
 
         println!("test");
         // Write resulting variables
-        let result = schedule
-            .iter()
-            .map(|(id2, spv_id)| {
-                let ptr = self.access_binding(*id2, ir);
-                self.b.store(ptr, *spv_id, None, None).unwrap();
-                *id2
+        let dst = dst
+            .into_iter()
+            .enumerate()
+            .map(|(i, (arr, binding, st))| {
+                let ty = arr.ty.to_spirv(&mut self.b);
+                let ty_int = self.b.type_int(32, 1);
+                let int_0 = self.b.constant_u32(ty_int, 0);
+
+                let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
+                let ptr = self
+                    .b
+                    .access_chain(ptr_ty, None, st, vec![int_0, self.idx.unwrap()])
+                    .unwrap();
+                self.b.store(ptr, schedule[i], None, None).unwrap();
+                (binding, arr)
             })
             .collect::<Vec<_>>();
 
@@ -1160,7 +1272,7 @@ impl Kernel {
             vec![self.global_invocation_id.unwrap()],
         );
 
-        result
+        dst
     }
     pub fn record_render_graph(self, ir: &Ir, graph: &mut RenderGraph) {
         let module = self.b.module();

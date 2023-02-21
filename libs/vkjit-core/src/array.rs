@@ -3,11 +3,12 @@ use screen_13::prelude::*;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use crate::internal::VarType;
+use crate::internal::{AsVarType, VarType};
 
 #[derive(Debug)]
 pub struct Array {
     pub buf: Arc<Buffer>,
+    pub ty: VarType,
     count: usize,
 }
 
@@ -22,10 +23,11 @@ impl Array {
         let buf = Buffer::create(device, BufferInfo::new_mappable(size as u64, usage)).unwrap();
         Self {
             buf: Arc::new(buf),
+            ty: ty.clone(),
             count,
         }
     }
-    pub fn from_slice<T: AsStd140>(
+    pub fn from_slice<T: AsStd140 + AsVarType>(
         device: &Arc<Device>,
         data: &[T],
         usage: vk::BufferUsageFlags,
@@ -41,6 +43,7 @@ impl Array {
         });
         Self {
             buf,
+            ty: T::as_var_type(),
             count: data.len(),
         }
     }
