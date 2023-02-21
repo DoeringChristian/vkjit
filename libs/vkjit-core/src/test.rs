@@ -2,7 +2,8 @@
 mod test {
     use std::sync::Arc;
 
-    use crate::internal::{Ir, VarType};
+    use crate::internal::Ir;
+    use crate::vartype::VarType;
     use screen_13::prelude::*;
 
     #[test]

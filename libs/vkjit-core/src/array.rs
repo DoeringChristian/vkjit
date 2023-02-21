@@ -3,7 +3,7 @@ use screen_13::prelude::*;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use crate::internal::{AsVarType, VarType};
+use crate::vartype::{AsVarType, VarType};
 
 #[derive(Debug)]
 pub struct Array {
