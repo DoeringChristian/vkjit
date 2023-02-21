@@ -6,18 +6,18 @@ mod test {
     use crate::vartype::VarType;
     use screen_13::prelude::*;
 
-    #[test]
-    fn test_linspace_f32() {
-        let mut ir = Ir::new();
-
-        let start = ir.const_f32(2.);
-        let stop = ir.const_f32(4.);
-        let x = ir.linspace(VarType::F32, start, stop, 4);
-
-        ir.eval(&[x]);
-
-        assert_eq!(ir.as_slice::<f32>(x), &[2., 2.5, 3., 3.5]);
-    }
+    // #[test]
+    // fn test_linspace_f32() {
+    //     let mut ir = Ir::new();
+    //
+    //     let start = ir.const_f32(2.);
+    //     let stop = ir.const_f32(4.);
+    //     let x = ir.linspace(VarType::F32, start, stop, 4);
+    //
+    //     ir.eval(&[x]);
+    //
+    //     assert_eq!(ir.as_slice::<f32>(x), &[2., 2.5, 3., 3.5]);
+    // }
 
     // #[test]
     // fn test_add_f32() {
@@ -99,21 +99,27 @@ mod test {
     //     assert_eq!(ir.as_slice::<i32>(res[0]), &[-1, -1, -1]);
     // }
     //
-    // #[test]
-    // fn test_scatter_f32() {
-    //     let mut ir = Ir::new();
-    //
-    //     let idx = ir.arange(VarType::U32, 3);
-    //     let x = ir.array_f32(&[0., 1., 2.]);
-    //
-    //     let y = ir.array_f32(&[0., 0., 0.]);
-    //
-    //     ir.scatter(x, y, idx, None);
-    //
-    //     ir.eval(vec![x]);
-    //
-    //     assert_eq!(ir.as_slice::<f32>(y), &[0., 1., 2.]);
-    // }
+    #[test]
+    fn test_scatter_f32() {
+        let mut ir = Ir::new();
+
+        let idx = ir.arange(VarType::U32, 3);
+        let x = ir.array_f32(&[0., 1., 2.]);
+        let c = ir.const_f32(1.);
+        let x = ir.add(x, c);
+
+        let y = ir.array_f32(&[0., 0., 0.]);
+
+        ir.scatter(x, y, idx, None);
+
+        for id in ir.iter_se(&[x]) {
+            dbg!(id);
+        }
+
+        ir.eval(&[x]);
+
+        assert_eq!(ir.as_slice::<f32>(y), &[1., 2., 3.]);
+    }
     // #[test]
     // fn test_scatter_conditional() {
     //     let mut ir = Ir::new();

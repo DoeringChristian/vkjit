@@ -2,6 +2,7 @@
 mod array;
 #[allow(dead_code)]
 pub mod internal;
+mod iterators;
 pub mod vartype;
 
 mod test;

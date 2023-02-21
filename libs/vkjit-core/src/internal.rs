@@ -13,6 +13,7 @@ use crevice::std140::{self, AsStd140};
 
 use crate::array::{self, Array};
 
+use crate::iterators::{DepIterator, SeIterator};
 use crate::vartype::*;
 
 #[derive(Debug, Clone, Copy)]
@@ -82,8 +83,8 @@ impl Deref for VarId {
 pub struct Var {
     op: Op,
     // Dependencies
-    deps: Vec<VarId>,
-    side_effects: Vec<VarId>,
+    pub(crate) deps: Vec<VarId>,
+    pub(crate) side_effects: Vec<VarId>,
     //pub array: Option<Arc<array::Array>>,
     ty: VarType,
 }
@@ -420,6 +421,21 @@ impl Ir {
             self.backend.arrays.insert(id, arr);
         }
     }
+
+    pub fn iter_dep(&self, root: &[VarId]) -> DepIterator {
+        DepIterator {
+            ir: self,
+            stack: Vec::from(root),
+            discovered: HashSet::default(),
+        }
+    }
+    pub fn iter_se(&self, root: &[VarId]) -> SeIterator {
+        SeIterator {
+            ir: self,
+            stack: Vec::from(root),
+            discovered: HashSet::default(),
+        }
+    }
     // Composite operations
 }
 
@@ -484,8 +500,8 @@ impl Kernel {
     fn binding(&mut self, id: VarId, access: Access) -> Binding {
         if !self.bindings.contains_key(&id) {
             let binding = Binding {
-                set: self.bindings.len() as u32,
-                binding: 0,
+                set: 0,
+                binding: self.bindings.len() as u32,
                 access,
             };
             self.bindings.insert(id, binding);
