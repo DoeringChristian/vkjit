@@ -100,6 +100,11 @@ pub struct Var {
     //pub array: Option<Arc<array::Array>>,
     ty: VarType,
 }
+impl Var {
+    pub fn ty(&self) -> &VarType {
+        &self.ty
+    }
+}
 
 #[derive(Debug)]
 pub struct Backend {
@@ -111,6 +116,7 @@ pub struct Backend {
 pub struct Ir {
     backend: Backend,
     vars: Vec<Var>,
+    schedule: Vec<VarId>,
 }
 
 macro_rules! bop {
@@ -136,17 +142,24 @@ impl Ir {
                 arrays: HashMap::default(),
             },
             vars: Vec::default(),
+            schedule: Vec::default(),
         }
     }
     pub fn new() -> Self {
-        let cfg = screen_13::prelude::DriverConfig::new().build();
-        let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
+        // let cfg = screen_13::prelude::DriverConfig::new().debug(true).build();
+        // let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
+        let sc13 = screen_13::prelude::EventLoop::new()
+            .debug(true)
+            .build()
+            .unwrap();
+        let device = sc13.device.clone();
         Self {
             backend: Backend {
                 device,
                 arrays: HashMap::default(),
             },
             vars: Vec::default(),
+            schedule: Vec::default(),
         }
     }
     pub fn array(&self, id: VarId) -> &array::Array {
@@ -343,6 +356,28 @@ impl Ir {
         let var = self.new_var(Op::Scatter, deps, src.ty.clone());
         self.var_mut(src_id).side_effects.push(var);
     }
+    pub fn is_buffer(&self, id: &VarId) -> bool {
+        self.backend.arrays.contains_key(id)
+    }
+    pub fn str(&self, id: VarId) -> String {
+        let var = &self.var(id);
+        let slice = screen_13::prelude::Buffer::mapped_slice(&self.backend.arrays[&id].buf);
+        match var.ty {
+            VarType::F32 => {
+                format!("{:?}", cast_slice::<_, f32>(slice))
+            }
+            VarType::U32 => {
+                format!("{:?}", cast_slice::<_, u32>(slice))
+            }
+            VarType::I32 => {
+                format!("{:?}", cast_slice::<_, i32>(slice))
+            }
+            VarType::Bool => {
+                format!("{:?}", cast_slice::<_, u8>(slice))
+            }
+            _ => unimplemented!(),
+        }
+    }
     pub fn print_buffer(&self, id: VarId) {
         let var = &self.var(id);
         let slice = screen_13::prelude::Buffer::mapped_slice(&self.backend.arrays[&id].buf);
@@ -368,12 +403,16 @@ impl Ir {
         assert!(var.ty.type_id() == TypeId::of::<T>());
         cast_slice(slice)
     }
+    pub fn schedule(&mut self, schedule: &[VarId]) {
+        self.schedule.extend_from_slice(schedule);
+    }
     pub fn eval(&mut self, schedule: &[VarId]) {
+        self.schedule.extend_from_slice(schedule);
         #[cfg(test)]
         trace!("Compiling Kernel...");
         trace!("Internal Representation: {:#?}", self);
         let mut k = Kernel::new();
-        let dst = k.compile(self, schedule);
+        let dst = k.compile(self);
 
         // Record render graph
         trace!("Recording Render Graph...");
@@ -381,8 +420,8 @@ impl Ir {
         let mut pool = LazyPool::new(&self.backend.device);
 
         let module = k.b.module();
-        #[cfg(test)]
-        println!("{}", module.disassemble());
+        // #[cfg(test)]
+        trace!("{}", module.disassemble());
 
         let spv = module.assemble();
         let pipeline = Arc::new(ComputePipeline::create(&self.backend.device, spv).unwrap());
@@ -407,9 +446,11 @@ impl Ir {
         for (binding, node) in nodes {
             match binding.access {
                 Access::Read => {
+                    trace!("Binding buffer to {:?}", binding);
                     pass = pass.read_descriptor((binding.set, binding.binding), node);
                 }
                 Access::Write => {
+                    trace!("Binding buffer to {:?}", binding);
                     pass = pass.write_descriptor((binding.set, binding.binding), node);
                 }
             }
@@ -430,7 +471,7 @@ impl Ir {
         trace!("Overwriting Evaluated Variables...");
         // Overwrite variables
         for (i, (_, arr)) in dst.into_iter().enumerate() {
-            let id = schedule[i];
+            let id = self.schedule[i];
             *self.var_mut(id) = Var {
                 op: Op::Binding,
                 deps: vec![],
@@ -1002,11 +1043,11 @@ impl Kernel {
             };
         }
     }
-    pub fn compile(&mut self, ir: &Ir, schedule: &[VarId]) -> Vec<(Binding, Array)> {
+    pub fn compile(&mut self, ir: &Ir) -> Vec<(Binding, Array)> {
         trace!("Compiling Kernel...");
         // Determine kernel size
         trace!("Determining Kernel size...");
-        for id in schedule.iter() {
+        for id in ir.schedule.iter() {
             self.record_kernel_size(*id, ir);
         }
 
@@ -1040,7 +1081,8 @@ impl Kernel {
         );
 
         trace!("Creating Destination Buffers and Bindings...");
-        let dst = schedule
+        let dst = ir
+            .schedule
             .iter()
             .enumerate()
             .map(|(i, id)| {
@@ -1082,7 +1124,7 @@ impl Kernel {
 
         // Record bindings for dependencies and side-effects TODO: scatter needs write!
         trace!("Recording Bindings for Source Variables...");
-        self.record_bindings(schedule, ir, Access::Read);
+        self.record_bindings(&ir.schedule, ir, Access::Read);
 
         // Setup main function
         trace!("Recording main function...");
@@ -1103,7 +1145,7 @@ impl Kernel {
         self.b.begin_block(None).unwrap();
 
         trace!("Recording Variables...");
-        self.record_spv_vars(schedule, ir);
+        self.record_spv_vars(&ir.schedule, ir);
 
         // Load x component of GlobalInvocationId as index.
         trace!("Recording GlobalInvocationId...");
@@ -1121,7 +1163,8 @@ impl Kernel {
         // record scheduled variables
 
         trace!("Recording Operations...");
-        let schedule = schedule
+        let schedule_spv = ir
+            .schedule
             .iter()
             .map(|id| {
                 let spv_id = self.record_ops(*id, ir);
@@ -1144,7 +1187,7 @@ impl Kernel {
                     .b
                     .access_chain(ptr_ty, None, st, vec![int_0, self.idx.unwrap()])
                     .unwrap();
-                self.b.store(ptr, schedule[i], None, None).unwrap();
+                self.b.store(ptr, schedule_spv[i], None, None).unwrap();
                 (binding, arr)
             })
             .collect::<Vec<_>>();

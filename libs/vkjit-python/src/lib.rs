@@ -17,8 +17,7 @@ lazy_static! {
 /// A Python module implemented in Rust.
 #[pymodule]
 fn vkjit(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<F32>()?;
-    m.add_class::<I32>()?;
+    m.add_class::<Var>()?;
     m.add_function(wrap_pyfunction!(eval, m)?)?;
     Ok(())
 }
