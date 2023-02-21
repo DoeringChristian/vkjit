@@ -1,5 +1,7 @@
+mod functions;
 mod types;
 
+use functions::*;
 use types::*;
 
 use pyo3::prelude::*;
@@ -16,5 +18,7 @@ lazy_static! {
 #[pymodule]
 fn vkjit(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<F32>()?;
+    m.add_class::<I32>()?;
+    m.add_function(wrap_pyfunction!(eval, m)?)?;
     Ok(())
 }

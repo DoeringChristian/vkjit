@@ -1614,16 +1614,6 @@ dependencies = [
  "paste",
  "pyo3",
  "vkjit-core",
- "vkjit-rust",
-]
-
-[[package]]
-name = "vkjit-rust"
-version = "0.1.0"
-dependencies = [
- "lazy_static",
- "paste",
- "vkjit-core",
 ]
 
 [[package]]

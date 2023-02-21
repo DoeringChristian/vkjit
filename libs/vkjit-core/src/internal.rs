@@ -72,6 +72,16 @@ impl Debug for VarId {
         write!(f, "{}", self.0)
     }
 }
+impl From<usize> for VarId {
+    fn from(val: usize) -> Self {
+        Self(val)
+    }
+}
+impl VarId {
+    pub fn get_id(&self) -> usize {
+        self.0
+    }
+}
 
 impl Deref for VarId {
     type Target = usize;
