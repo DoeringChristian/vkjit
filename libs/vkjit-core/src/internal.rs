@@ -627,27 +627,16 @@ impl Kernel {
     ///
     /// Records bindings before main function.
     ///
-    fn record_bindings(&mut self, id: VarId, ir: &Ir, access: Access) {
-        if self.arrays.contains_key(&id) | self.traversal_set.contains(&id) {
-            return;
+    fn record_bindings(&mut self, schedule: &[VarId], ir: &Ir, access: Access) {
+        for id in ir.iter_se(schedule) {
+            let var = &ir.var(id);
+            match var.op {
+                Op::Binding => {
+                    self.record_binding(id, ir, access);
+                }
+                _ => {}
+            }
         }
-        self.traversal_set.insert(id);
-        //println!("{:?}", id);
-        let var = &ir.var(id);
-        match var.op {
-            Op::Binding => {
-                for id in var.side_effects.iter() {
-                    self.record_bindings(*id, ir, access);
-                }
-                self.record_binding(id, ir, access);
-            }
-            _ => {
-                for id in var.deps.iter() {
-                    //.chain(var.side_effects.iter()) {
-                    self.record_bindings(*id, ir, access);
-                }
-            }
-        };
     }
     fn record_if<F>(&mut self, conditional_id: u32, mut f: F)
     where
@@ -1039,10 +1028,6 @@ impl Kernel {
             .iter()
             .enumerate()
             .map(|(i, id)| {
-                // Record bindings for source variables TODO: handle potential scatter events
-                self.traversal_set.clear();
-                self.record_bindings(*id, ir, Access::Read);
-
                 let ty = &ir.var(*id).ty.clone();
 
                 // Record dst bindings
@@ -1079,21 +1064,8 @@ impl Kernel {
             })
             .collect::<Vec<_>>();
 
-        // Add new result variables and record bindings.
-        let schedule = schedule
-            .iter()
-            .map(|id| {
-                let ty = &ir.var(*id).ty.clone();
-                let device = ir.backend.device.clone();
-                // Record binding for all bound variables.
-                self.traversal_set.clear();
-                self.record_bindings(*id, ir, Access::Read);
-                // Rcord bindings for result variables.
-                *id
-            })
-            .collect::<Vec<_>>();
-
-        //
+        // Record bindings for dependencies and side-effects
+        self.record_bindings(schedule, ir, Access::Read);
 
         // Setup main function
         let void = self.b.type_void();

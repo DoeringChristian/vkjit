@@ -112,10 +112,6 @@ mod test {
 
         ir.scatter(x, y, idx, None);
 
-        for id in ir.iter_se(&[x]) {
-            dbg!(id);
-        }
-
         ir.eval(&[x]);
 
         assert_eq!(ir.as_slice::<f32>(y), &[1., 2., 3.]);
