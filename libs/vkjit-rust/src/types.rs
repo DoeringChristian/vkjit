@@ -2,14 +2,14 @@ use crate::IR;
 use paste::paste;
 use std::fmt::Debug;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
-use vkjit_core::internal::VarType;
+use vkjit_core::vartype::VarType;
 
 use vkjit_core::{Ir, VarId};
 
 pub trait Var {
-    fn eval(self) -> Self;
-    fn id(self) -> VarId;
-    fn from_id(id: VarId) -> Self;
+    fn id(&self) -> VarId;
+}
+pub trait ToVarType {
     fn ty() -> VarType;
 }
 
@@ -25,18 +25,18 @@ pub struct Bool(VarId);
 macro_rules! var {
     ($ty:ident) => {
         impl Var for $ty {
-            fn eval(self) -> Self {
-                let res = IR.lock().unwrap().eval(vec![self.0]);
-                Self(res[0])
-            }
-            fn id(self) -> VarId {
+            fn id(&self) -> VarId {
                 self.0
             }
-            fn from_id(id: VarId) -> Self {
-                Self(id)
-            }
+        }
+        impl ToVarType for $ty {
             fn ty() -> VarType {
                 VarType::$ty
+            }
+        }
+        impl From<VarId> for $ty {
+            fn from(id: VarId) -> Self {
+                Self(id)
             }
         }
     };

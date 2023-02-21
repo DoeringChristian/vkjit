@@ -1526,6 +1526,7 @@ dependencies = [
 name = "vkjit03"
 version = "0.1.0"
 dependencies = [
+ "pretty_env_logger",
  "vkjit-core",
  "vkjit-rust",
 ]

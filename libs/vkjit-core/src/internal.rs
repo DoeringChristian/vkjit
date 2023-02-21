@@ -9,6 +9,8 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use log::{error, trace, warn};
+
 use crevice::std140::{self, AsStd140};
 
 use crate::array::{self, Array};
@@ -358,11 +360,13 @@ impl Ir {
     }
     pub fn eval(&mut self, schedule: &[VarId]) {
         #[cfg(test)]
-        println!("{:#?}", self);
+        trace!("Compiling Kernel...");
+        trace!("Internal Representation: {:#?}", self);
         let mut k = Kernel::new();
         let dst = k.compile(self, schedule);
 
         // Record render graph
+        trace!("Recording Render Graph...");
         let mut graph = RenderGraph::new();
         let mut pool = LazyPool::new(&self.backend.device);
 
@@ -374,6 +378,7 @@ impl Ir {
         let pipeline = Arc::new(ComputePipeline::create(&self.backend.device, spv).unwrap());
 
         // Collect nodes and corresponding bindings
+        trace!("Collecting Nodes and Bindings...");
         let mut nodes = k
             .bindings
             .iter()
@@ -399,20 +404,24 @@ impl Ir {
                 }
             }
         }
+        trace!("Recording Compute Pass...");
         let num = k.num.unwrap();
         pass.record_compute(move |compute, _| {
             compute.dispatch(num as u32, 1, 1);
         })
         .submit_pass();
 
+        trace!("Resolving Graph...");
         graph.resolve().submit(&mut pool, 0).unwrap();
 
+        trace!("Executing Computations...");
         unsafe { self.backend.device.device_wait_idle().unwrap() };
 
+        trace!("Overwriting Evaluated Variables...");
         // Overwrite variables
         for (i, (_, arr)) in dst.into_iter().enumerate() {
             let id = schedule[i];
-            self.vars[id.0] = Var {
+            *self.var_mut(id) = Var {
                 op: Op::Binding,
                 deps: vec![],
                 side_effects: vec![],
@@ -966,37 +975,32 @@ impl Kernel {
     ///
     /// Record variables needed to store structs and variables for select.
     ///
-    pub fn record_spv_vars(&mut self, id: VarId, ir: &Ir) {
-        if self.vars.contains_key(&id) | self.traversal_set.contains(&id) {
-            return;
+    pub fn record_spv_vars(&mut self, schedule: &[VarId], ir: &Ir) {
+        for id in ir.iter_dep(schedule) {
+            let var = &ir.var(id);
+            let ty = var.ty.to_spirv(&mut self.b);
+            let ty_ptr = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
+
+            match var.op {
+                Op::StructInit | Op::Select => {
+                    let var = self
+                        .b
+                        .variable(ty_ptr, None, spirv::StorageClass::Function, None);
+                    self.vars.insert(id, var);
+                }
+                _ => {}
+            };
         }
-        self.traversal_set.insert(id);
-        let var = &ir.var(id);
-
-        for id in var.deps.iter().chain(var.side_effects.iter()) {
-            self.record_spv_vars(*id, ir);
-        }
-
-        let ty = var.ty.to_spirv(&mut self.b);
-        let ty_ptr = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
-
-        match var.op {
-            Op::StructInit | Op::Select => {
-                let var = self
-                    .b
-                    .variable(ty_ptr, None, spirv::StorageClass::Function, None);
-                self.vars.insert(id, var);
-            }
-            _ => {}
-        };
     }
     pub fn compile(&mut self, ir: &Ir, schedule: &[VarId]) -> Vec<(Binding, Array)> {
+        trace!("Compiling Kernel...");
         // Determine kernel size
+        trace!("Determining Kernel size...");
         for id in schedule.iter() {
             self.record_kernel_size(*id, ir);
         }
 
-        // Setup kernel with main function
+        trace!("Kernel Configuration");
         self.b.set_version(1, 3);
         self.b.capability(spirv::Capability::Shader);
         self.b.memory_model(
@@ -1005,6 +1009,7 @@ impl Kernel {
         );
 
         // Setup default variables such as GlobalInvocationId
+        trace!("Setting Up Default Variables...");
         let uint = self.b.type_int(32, 0);
         let v3uint = self.b.type_vector(uint, 3);
         let ptr_input_v3uint =
@@ -1024,6 +1029,7 @@ impl Kernel {
             )],
         );
 
+        trace!("Creating Destination Buffers and Bindings...");
         let dst = schedule
             .iter()
             .enumerate()
@@ -1064,10 +1070,12 @@ impl Kernel {
             })
             .collect::<Vec<_>>();
 
-        // Record bindings for dependencies and side-effects
+        // Record bindings for dependencies and side-effects TODO: scatter needs write!
+        trace!("Recording Bindings for Source Variables...");
         self.record_bindings(schedule, ir, Access::Read);
 
         // Setup main function
+        trace!("Recording main function...");
         let void = self.b.type_void();
         let voidf = self.b.type_function(void, vec![]);
         let main = self
@@ -1084,12 +1092,11 @@ impl Kernel {
             .execution_mode(main, spirv::ExecutionMode::LocalSize, vec![1, 1, 1]);
         self.b.begin_block(None).unwrap();
 
-        self.traversal_set.clear();
-        for id in schedule.iter() {
-            self.record_spv_vars(*id, ir);
-        }
+        trace!("Recording Variables...");
+        self.record_spv_vars(schedule, ir);
 
         // Load x component of GlobalInvocationId as index.
+        trace!("Recording GlobalInvocationId...");
         let uint = self.b.type_int(32, 0);
         let uint_0 = self.b.constant_u32(uint, 0);
         let ptr_input_uint = self.b.type_pointer(None, spirv::StorageClass::Input, uint);
@@ -1103,6 +1110,7 @@ impl Kernel {
 
         // record scheduled variables
 
+        trace!("Recording Operations...");
         let schedule = schedule
             .iter()
             .map(|id| {
@@ -1111,8 +1119,8 @@ impl Kernel {
             })
             .collect::<Vec<_>>();
 
-        println!("test");
         // Write resulting variables
+        trace!("Recording Write to Destination...");
         let dst = dst
             .into_iter()
             .enumerate()
@@ -1132,6 +1140,7 @@ impl Kernel {
             .collect::<Vec<_>>();
 
         // End main function
+        trace!("Recording End main function...");
         self.b.ret().unwrap();
         self.b.end_function().unwrap();
         self.b.entry_point(
