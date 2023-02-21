@@ -9,31 +9,23 @@ pub trait Var {
     fn id(&self) -> VarId;
 }
 
-#[pyclass]
-#[derive(Clone, Copy)]
-pub struct F32(VarId);
-#[pyclass]
-#[derive(Clone, Copy)]
-pub struct U32(VarId);
-#[pyclass]
-#[derive(Clone, Copy)]
-pub struct I32(VarId);
-#[pyclass]
-#[derive(Clone, Copy)]
-pub struct Bool(VarId);
-
-macro_rules! new {
-    ($wrapper:ident, $rtype:ident) => {
+macro_rules! var {
+    ($ty:ident) => {
         paste! {
+
+            #[pyclass]
+            #[derive(Clone, Copy)]
+            pub struct [<$ty:upper>](VarId);
+
             #[pymethods]
-            impl $wrapper {
+            impl [<$ty:upper>]{
                 #[new]
                 pub fn __new__(src: &PyAny) -> PyResult<Self> {
                     if let Ok(val) = src.extract::<f32>() {
-                        return Ok(Self(IR.lock().unwrap().[<const_$rtype>](val)));
+                        return Ok(Self(IR.lock().unwrap().[<const_$ty>](val)));
                     }
                     if let Ok(val) = src.extract::<Vec<f32>>() {
-                        return Ok(Self(IR.lock().unwrap().[<array_$rtype>](&val)));
+                        return Ok(Self(IR.lock().unwrap().[<array_$ty>](&val)));
                     }
                     Err(PyTypeError::new_err("Not a valid argument!"))
                 }
@@ -42,4 +34,7 @@ macro_rules! new {
     };
 }
 
-new!(F32, f32);
+var!(f32);
+//
+// #[pymethods]
+// impl F32 {}
