@@ -1,8 +1,8 @@
 mod functions;
 mod types;
 
-use functions::*;
-use types::*;
+pub use functions::*;
+pub use types::*;
 
 use pyo3::prelude::*;
 
@@ -20,5 +20,6 @@ fn vkjit(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<Var>()?;
     m.add_function(wrap_pyfunction!(eval, m)?)?;
     m.add_function(wrap_pyfunction!(var, m)?)?;
+    m.add_function(wrap_pyfunction!(ir, m)?)?;
     Ok(())
 }

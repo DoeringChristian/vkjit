@@ -48,6 +48,15 @@ impl Bop {
             _ => unimplemented!(),
         }
     }
+    fn eval_src_ty(self, lhs: &VarType, rhs: &VarType) -> VarType {
+        match self {
+            Self::Add => lhs.max(rhs).clone(),
+            Self::Sub => lhs.max(rhs).clone(),
+            Self::Div => VarType::F32,
+            Self::Mul => VarType::F32,
+            _ => unimplemented!(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -32,3 +32,8 @@ pub fn var(args: &PyTuple) -> PyResult<Var> {
         Var::try_from(args.as_ref())
     }
 }
+
+#[pyfunction]
+pub fn ir() -> String {
+    format!("{:#?}", IR.lock().unwrap())
+}

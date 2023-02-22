@@ -62,20 +62,6 @@ impl VarType {
             _ => unimplemented!(),
         }
     }
-    // #[allow(unused)]
-    // pub fn from_rs<T: 'static>() -> Self {
-    //     let ty_f32 = std::any::TypeId::of::<f32>();
-    //     let ty_u32 = std::any::TypeId::of::<u32>();
-    //     let ty_i32 = std::any::TypeId::of::<i32>();
-    //     let ty_bool = std::any::TypeId::of::<bool>();
-    //     match std::any::TypeId::of::<T>() {
-    //         ty_f32 => Self::F32,
-    //         ty_u32 => Self::U32,
-    //         ty_i32 => Self::I32,
-    //         ty_bool => Self::Bool,
-    //         _ => unimplemented!(),
-    //     }
-    // }
     pub fn type_id(&self) -> TypeId {
         match self {
             VarType::Bool => TypeId::of::<bool>(),

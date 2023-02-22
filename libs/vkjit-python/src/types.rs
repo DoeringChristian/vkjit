@@ -53,6 +53,9 @@ impl TryFrom<&PyAny> for Var {
         if let Ok(val) = value.extract::<Var>() {
             return Ok(val);
         }
+        if let Ok(val) = value.extract::<u32>() {
+            return Ok(val.into());
+        }
         if let Ok(val) = value.extract::<i32>() {
             return Ok(val.into());
         }
@@ -123,4 +126,11 @@ impl Var {
         }
         Ok(format! {"{}", ir.str(self.0)})
     }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::*;
+    #[test]
+    fn casting() {}
 }
