@@ -19,5 +19,6 @@ lazy_static! {
 fn vkjit(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<Var>()?;
     m.add_function(wrap_pyfunction!(eval, m)?)?;
+    m.add_function(wrap_pyfunction!(var, m)?)?;
     Ok(())
 }
