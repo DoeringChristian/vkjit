@@ -424,7 +424,14 @@ impl Ir {
         trace!("{}", module.disassemble());
 
         let spv = module.assemble();
-        let pipeline = Arc::new(ComputePipeline::create(&self.backend.device, spv).unwrap());
+        let pipeline = Arc::new(
+            ComputePipeline::create(
+                &self.backend.device,
+                screen_13::prelude::ComputePipelineInfo::default(),
+                screen_13::prelude::Shader::new_compute(spv),
+            )
+            .unwrap(),
+        );
 
         // Collect nodes and corresponding bindings
         trace!("Collecting Nodes and Bindings...");
