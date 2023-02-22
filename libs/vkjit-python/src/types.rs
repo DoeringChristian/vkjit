@@ -109,10 +109,18 @@ impl Var {
     pub fn __div__(&self, rhs: &Self) -> Self {
         Self(IR.lock().unwrap().div(self.0, rhs.0))
     }
-    pub fn __str__(&self) -> String {
-        if !IR.lock().unwrap().is_buffer(&self.0) {
-            IR.lock().unwrap().eval(&[self.0]);
+    pub fn __repr__(&self) -> PyResult<String> {
+        let mut ir = IR.lock().unwrap();
+        if !ir.is_buffer(&self.0) {
+            ir.eval(&[self.0]);
         }
-        format! {"{:?}[\n{}]", IR.lock().unwrap().var(self.0).ty(), IR.lock().unwrap().str(self.0)}
+        Ok(format! {"array(dtype = {:?}, {})", ir.var(self.0).ty(), ir.str(self.0)})
+    }
+    pub fn __str__(&self) -> PyResult<String> {
+        let mut ir = IR.lock().unwrap();
+        if !ir.is_buffer(&self.0) {
+            ir.eval(&[self.0]);
+        }
+        Ok(format! {"{}", ir.str(self.0)})
     }
 }

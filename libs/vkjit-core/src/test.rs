@@ -140,7 +140,7 @@ mod test {
         let mut ir = Ir::new();
 
         let x = ir.arange(VarType::U32, 3);
-        let y = ir.cast(x, VarType::F32);
+        let y = ir.cast(x, &VarType::F32);
 
         ir.eval(&[y]);
 

@@ -125,11 +125,17 @@ macro_rules! bop {
         pub fn [<$bop:lower>](&mut self, lhs: VarId, rhs: VarId) -> VarId {
             let lhs_ty = &self.var( lhs ).ty;
             let rhs_ty = &self.var( rhs ).ty;
-            assert!(lhs_ty == rhs_ty);
-            //let ty = VarType::Bool;
-            let bop = Bop::$bop;
-            let ty = bop.eval_ty(lhs_ty, rhs_ty);
-            self.new_var(Op::Bop(bop), vec![lhs, rhs], ty)
+
+            // We perform the operation (i.e. lt or add) in the "largest" type
+            let opty = lhs_ty.max(rhs_ty).clone();
+
+            // The resulting type is not neccesarily the same (i.e. lt(f32, f32) -> bool)
+            let ty = Bop::$bop.eval_ty(lhs_ty, rhs_ty);
+
+            let lhs = self.cast(lhs, &opty);
+            let rhs = self.cast(rhs, &opty);
+
+            self.new_var(Op::Bop(Bop::$bop), vec![lhs, rhs], ty)
         }
         }
     };
@@ -245,8 +251,13 @@ impl Ir {
             _ => unimplemented!(),
         }
     }
-    pub fn cast(&mut self, src: VarId, ty: VarType) -> VarId {
-        self.new_var(Op::Cast, vec![src], ty)
+    pub fn cast(&mut self, src: VarId, ty: &VarType) -> VarId {
+        let src_ty = &self.var(src).ty;
+        if src_ty == ty {
+            return src;
+        } else {
+            self.new_var(Op::Cast, vec![src], ty.clone())
+        }
     }
     pub fn struct_init(&mut self, vars: Vec<VarId>) -> VarId {
         let elems = vars
@@ -375,7 +386,7 @@ impl Ir {
             VarType::Bool => {
                 format!("{:?}", cast_slice::<_, u8>(slice))
             }
-            _ => unimplemented!(),
+            _ => format!("Undefined Type!"),
         }
     }
     pub fn print_buffer(&self, id: VarId) {
@@ -881,6 +892,7 @@ impl Kernel {
             Op::Cast => {
                 let src_ty = &ir.var(var.deps[0]).ty;
                 let src_spv = self.record_ops(var.deps[0], ir);
+                trace!("Casting {:?} -> {:?}", src_ty, var.ty);
                 match src_ty {
                     VarType::F32 => match var.ty {
                         VarType::F32 => src_spv,
