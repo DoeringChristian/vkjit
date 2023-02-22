@@ -161,13 +161,13 @@ impl Ir {
         }
     }
     pub fn new() -> Self {
-        // let cfg = screen_13::prelude::DriverConfig::new().debug(true).build();
-        // let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
-        let sc13 = screen_13::prelude::EventLoop::new()
-            .debug(true)
-            .build()
-            .unwrap();
-        let device = sc13.device.clone();
+        let cfg = screen_13::prelude::DriverConfig::new().build();
+        let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
+        // let sc13 = screen_13::prelude::EventLoop::new()
+        //     .debug(true)
+        //     .build()
+        //     .unwrap();
+        // let device = sc13.device.clone();
         Self {
             backend: Backend {
                 device,
@@ -820,7 +820,9 @@ impl Kernel {
                         }
                     }
                     Const::UInt32(c) => self.b.constant_u32(ty, c),
-                    Const::Int32(c) => self.b.constant_u32(ty, unsafe { *(c as *const u32) }),
+                    Const::Int32(c) => self
+                        .b
+                        .constant_u32(ty, unsafe { *(&c as *const i32 as *const u32) }),
                     Const::Float32(c) => self.b.constant_f32(ty, c),
                     _ => unimplemented!(),
                 };

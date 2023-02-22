@@ -146,4 +146,18 @@ mod test {
 
         assert_eq!(ir.as_slice::<f32>(y), &[0., 1., 2.]);
     }
+
+    #[test]
+    fn autocast() {
+        let mut ir = Ir::new();
+
+        let x = ir.array_u32(&[1, 2]);
+        let y = ir.const_i32(-1);
+
+        let z = ir.add(x, y);
+
+        ir.eval(&[z]);
+
+        assert_eq!(ir.as_slice::<i32>(z), &[0, 1]);
+    }
 }
