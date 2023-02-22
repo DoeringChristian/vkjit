@@ -2,6 +2,7 @@ use paste::paste;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
+use vkjit_core::vartype::VarType;
 use vkjit_core::VarId;
 
 use crate::IR;
@@ -83,14 +84,27 @@ impl TryFrom<&PyAny> for Var {
 #[derive(Clone, Copy)]
 pub struct Var(VarId);
 
+impl Var {
+    pub fn id(&self) -> VarId {
+        self.0
+    }
+    pub fn ty(&self) -> VarType {
+        let ir = IR.lock().unwrap();
+        ir.var(self.0).ty().clone()
+    }
+}
+
+impl From<VarId> for Var {
+    fn from(id: VarId) -> Self {
+        Var(id)
+    }
+}
+
 #[pymethods]
 impl Var {
     #[new]
     pub fn __new__(args: &PyAny) -> PyResult<Self> {
         Self::try_from(args)
-    }
-    pub fn id(&self) -> usize {
-        self.0.get_id()
     }
     pub fn tolist(&self) -> Vec<f32> {
         Vec::from(IR.lock().unwrap().as_slice::<f32>(self.0))

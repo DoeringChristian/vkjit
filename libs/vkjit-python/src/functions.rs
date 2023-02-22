@@ -37,3 +37,16 @@ pub fn var(args: &PyTuple) -> PyResult<Var> {
 pub fn ir() -> String {
     format!("{:#?}", IR.lock().unwrap())
 }
+
+#[pyfunction]
+pub fn linspace(start: &PyAny, stop: &PyAny, num: usize) -> PyResult<Var> {
+    let start = Var::try_from(start)?;
+    let stop = Var::try_from(stop)?;
+
+    assert_eq!(start.ty(), stop.ty());
+    let ty = start.ty();
+
+    let mut ir = IR.lock().unwrap();
+
+    Ok(Var::from(ir.linspace(ty, start.id(), stop.id(), num)))
+}

@@ -121,11 +121,27 @@ pub struct Backend {
     arrays: HashMap<VarId, array::Array>,
 }
 
-#[derive(Debug)]
 pub struct Ir {
     backend: Backend,
     vars: Vec<Var>,
     schedule: Vec<VarId>,
+}
+
+impl Debug for Ir {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut st = f.debug_struct("Ir");
+        // st.field("backend", &self.backend)
+        //     .field("vars", &self.vars)
+        //     .field("schedule", &self.schedule);
+        //
+        // st.finish();
+
+        for (i, x) in self.vars.iter().enumerate() {
+            st.field(&format!("[{i}]"), x);
+        }
+
+        st.finish()
+    }
 }
 
 macro_rules! bop {

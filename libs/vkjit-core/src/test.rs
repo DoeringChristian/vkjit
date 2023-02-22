@@ -18,6 +18,29 @@ mod test {
 
         assert_eq!(ir.as_slice::<f32>(x), &[2., 2.5, 3., 3.5]);
     }
+    #[test]
+    fn test_linspace_eval2() {
+        pretty_env_logger::init();
+        let mut ir = Ir::new();
+
+        let start = ir.const_f32(2.);
+        let stop = ir.const_f32(4.);
+        let x = ir.linspace(VarType::F32, start, stop, 4);
+
+        ir.eval(&[x]);
+
+        assert_eq!(ir.as_slice::<f32>(x), &[2., 2.5, 3., 3.5]);
+
+        let start = ir.const_f32(2.);
+        let stop = ir.const_f32(4.);
+        let x = ir.linspace(VarType::F32, start, stop, 8);
+
+        ir.eval(&[x]);
+        assert_eq!(
+            ir.as_slice::<f32>(x),
+            &[2., 2.25, 2.5, 2.75, 3., 3.25, 3.5, 3.75]
+        );
+    }
 
     #[test]
     fn test_add_f32() {

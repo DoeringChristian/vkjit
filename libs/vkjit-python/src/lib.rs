@@ -21,5 +21,6 @@ fn vkjit(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(eval, m)?)?;
     m.add_function(wrap_pyfunction!(var, m)?)?;
     m.add_function(wrap_pyfunction!(ir, m)?)?;
+    m.add_function(wrap_pyfunction!(linspace, m)?)?;
     Ok(())
 }
