@@ -130,11 +130,7 @@ pub struct Ir {
 impl Debug for Ir {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut st = f.debug_struct("Ir");
-        // st.field("backend", &self.backend)
-        //     .field("vars", &self.vars)
-        //     .field("schedule", &self.schedule);
-        //
-        // st.finish();
+        st.field("backedn", &self.backend);
 
         for (i, x) in self.vars.iter().enumerate() {
             st.field(&format!("[{i}]"), x);
@@ -239,9 +235,11 @@ impl Ir {
     }
     pub fn linspace(&mut self, ty: VarType, start_id: VarId, stop_id: VarId, num: usize) -> VarId {
         let len = self.sub(stop_id, start_id);
-        let x = self.arange(ty, num);
-        let x = self.div(x, len);
-        let x = self.add(x, start_id);
+        let idx = self.arange(ty, num);
+        let num = self.const_u32(num as u32);
+        let idx_adjusted = self.div(idx, num);
+        let idx_adjusted = self.mul(idx_adjusted, len);
+        let x = self.add(idx_adjusted, start_id);
         x
     }
     pub fn zeros(&mut self, ty: VarType) -> VarId {
@@ -498,7 +496,10 @@ impl Ir {
                 }
             }
         }
-        trace!("Recording Compute Pass...");
+        trace!(
+            "Recording Compute Pass of size ({}, 1, 1)...",
+            k.num.unwrap()
+        );
         let num = k.num.unwrap();
         pass.record_compute(move |compute, _| {
             compute.dispatch(num as u32, 1, 1);
@@ -523,6 +524,9 @@ impl Ir {
             };
             self.backend.arrays.insert(id, arr);
         }
+
+        // Clear schedule
+        self.schedule.clear();
     }
 
     pub fn iter_dep(&self, root: &[VarId]) -> DepIterator {
@@ -708,24 +712,23 @@ impl Kernel {
     ///
     /// Traverse kernel and determine size. Panics if kernel size mismatches
     ///
-    fn record_kernel_size(&mut self, id: VarId, ir: &Ir) {
-        if self.num.is_some() {
-            return;
-        }
-        let var = &ir.var(id);
-        match var.op {
-            Op::Binding => {
-                self.set_num(ir.backend.arrays[&id].count());
-            }
-            Op::Arange(num) => {
-                self.set_num(num);
-            }
-            _ => {
-                for id in var.deps.iter() {
-                    self.record_kernel_size(*id, ir);
+    fn record_kernel_size(&mut self, schedule: &[VarId], ir: &Ir) {
+        trace!("Evaluating Kernel size...");
+        for id in ir.iter_dep(schedule) {
+            trace!("Visiting Variable {}", id.0);
+            let var = &ir.var(id);
+            match var.op {
+                Op::Binding => {
+                    trace!("\tFount Binding of size {}", ir.backend.arrays[&id].count());
+                    self.set_num(ir.backend.arrays[&id].count());
                 }
-            }
-        };
+                Op::Arange(num) => {
+                    trace!("\tFount Arange of num {}", num);
+                    self.set_num(num);
+                }
+                _ => (),
+            };
+        }
     }
     ///
     /// Records bindings before main function.
@@ -1093,9 +1096,7 @@ impl Kernel {
         trace!("Compiling Kernel...");
         // Determine kernel size
         trace!("Determining Kernel size...");
-        for id in ir.schedule.iter() {
-            self.record_kernel_size(*id, ir);
-        }
+        self.record_kernel_size(&ir.schedule, ir);
 
         trace!("Kernel Configuration");
         self.b.set_version(1, 3);

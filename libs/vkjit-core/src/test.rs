@@ -31,14 +31,15 @@ mod test {
 
         assert_eq!(ir.as_slice::<f32>(x), &[2., 2.5, 3., 3.5]);
 
-        let start = ir.const_f32(2.);
-        let stop = ir.const_f32(4.);
-        let x = ir.linspace(VarType::F32, start, stop, 8);
+        let start = ir.const_f32(10.);
+        let stop = ir.const_f32(20.);
+
+        let x = ir.linspace(VarType::F32, start, stop, 10);
 
         ir.eval(&[x]);
         assert_eq!(
             ir.as_slice::<f32>(x),
-            &[2., 2.25, 2.5, 2.75, 3., 3.25, 3.5, 3.75]
+            &[10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0]
         );
     }
 
