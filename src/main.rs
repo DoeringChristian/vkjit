@@ -4,13 +4,14 @@ use vkjit_rust::*;
 fn main() {
     pretty_env_logger::init();
 
-    let x = F32::from([1., 2., 3., 4., 5.]);
-    let y = F32::from([0.; 6]);
-    x.scatter_with(y, arange::<U32>(5), x.leq(3.));
+    let x = Var::from(vec![1, 2, 3]);
+    let c = Var::from(1);
+    println!("test");
+    let y = c + x;
 
     println!("{:#?}", IR.lock().unwrap());
 
-    eval!(x);
+    eval!(y);
 
     println!("{:?}", y);
 }

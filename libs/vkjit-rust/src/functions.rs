@@ -1,22 +1,18 @@
-use vkjit_core::VarId;
+use vkjit_core::{AsVarType, VarId};
 
 use crate::*;
 
-pub fn arange<T: From<VarId> + ToVarType>(num: usize) -> T {
-    T::from(IR.lock().unwrap().arange(T::ty(), num))
+pub fn arange<T: Into<Var> + AsVarType>(num: usize) -> Var {
+    Var::from(IR.lock().unwrap().arange(T::as_var_type(), num))
 }
 
-pub fn linspace<T: Var + From<VarId> + ToVarType>(
-    start: impl Into<T>,
-    stop: impl Into<T>,
-    num: usize,
-) -> T {
+pub fn linspace(start: impl Into<Var>, stop: impl Into<Var>, num: usize) -> Var {
     let start = start.into();
     let stop = stop.into();
-    T::from(
+    Var::from(
         IR.lock()
             .unwrap()
-            .linspace(T::ty(), start.id(), stop.id(), num),
+            .linspace(start.ty(), start.id(), stop.id(), num),
     )
 }
 

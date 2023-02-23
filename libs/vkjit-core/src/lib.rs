@@ -8,3 +8,4 @@ pub mod vartype;
 mod test;
 
 pub use internal::{Ir, VarId};
+pub use vartype::{AsVarType, VarType};
