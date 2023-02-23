@@ -184,4 +184,17 @@ mod test {
 
         assert_eq!(ir.as_slice::<i32>(z), &[0, 1]);
     }
+
+    #[test]
+    fn dec_ref_count() {
+        let mut ir = Ir::new();
+
+        let x = ir.array_f32(&[1., 2., 3.]);
+
+        ir.dec_ref_count(x);
+
+        assert_eq!(ir.vars.len(), 1);
+        assert_eq!(ir.vars[0].ref_count, 0);
+        assert_eq!(ir.backend.arrays.len(), 0);
+    }
 }

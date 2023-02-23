@@ -108,7 +108,7 @@ pub struct Var {
     pub(crate) side_effects: Vec<VarId>,
     //pub array: Option<Arc<array::Array>>,
     ty: VarType,
-    ref_count: usize,
+    pub(crate) ref_count: usize,
 }
 impl Var {
     pub fn ty(&self) -> &VarType {
@@ -119,19 +119,19 @@ impl Var {
 #[derive(Debug)]
 pub struct Backend {
     device: Arc<screen_13::prelude::Device>,
-    arrays: HashMap<VarId, array::Array>,
+    pub(crate) arrays: HashMap<VarId, array::Array>,
 }
 
 pub struct Ir {
-    backend: Backend,
-    pub vars: Vec<Var>,
+    pub(crate) backend: Backend,
+    pub(crate) vars: Vec<Var>,
     schedule: Vec<VarId>,
 }
 
 impl Debug for Ir {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut st = f.debug_struct("Ir");
-        st.field("backedn", &self.backend);
+        st.field("backend", &self.backend);
 
         for (i, x) in self.vars.iter().enumerate() {
             st.field(&format!("[{i}]"), x);
