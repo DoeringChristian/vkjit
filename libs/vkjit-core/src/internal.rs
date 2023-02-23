@@ -15,7 +15,7 @@ use crevice::std140::{self, AsStd140};
 
 use crate::array::{self, Array};
 
-use crate::iterators::{DepIterator, SeIterator};
+use crate::iterators::{DepIterator, MutSeVisitor, SeIterator};
 use crate::vartype::*;
 
 #[derive(Debug, Clone, Copy)]
@@ -124,7 +124,7 @@ pub struct Backend {
 
 pub struct Ir {
     backend: Backend,
-    vars: Vec<Var>,
+    pub vars: Vec<Var>,
     schedule: Vec<VarId>,
 }
 
@@ -457,21 +457,20 @@ impl Ir {
         cast_slice(slice)
     }
     pub fn dec_ref_count(&mut self, id: VarId) {
-        let mut var = self.var_mut(id);
-        var.ref_count -= 1;
-        if var.ref_count == 0 {
-            let refs = var
-                .deps
-                .iter()
-                .chain(var.side_effects.iter())
-                .map(|id| *id)
-                .collect::<Vec<_>>();
-            for id in refs {
-                self.dec_ref_count(id);
-            }
+        let mut visitor = MutSeVisitor {
+            ir: self,
+            discovered: Default::default(),
+        };
+        visitor.visit(id, &|ir, id| {
+            let mut var = ir.var_mut(id);
+            var.ref_count -= 1;
 
-            self.backend.arrays.remove(&id);
-        }
+            if var.ref_count == 0 {
+                ir.backend.arrays.remove(&id);
+                return true;
+            }
+            return false;
+        });
     }
     pub fn inc_ref_count(&mut self, id: VarId) {
         let mut var = self.var_mut(id);

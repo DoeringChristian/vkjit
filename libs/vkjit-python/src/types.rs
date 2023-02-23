@@ -86,7 +86,7 @@ pub struct Var(VarId);
 
 impl Drop for Var {
     fn drop(&mut self) {
-        IR.lock().unwrap().dec_ref_count(self.0);
+        // IR.lock().unwrap().dec_ref_count(self.0);
     }
 }
 

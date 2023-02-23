@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use crate::internal::Var;
 use crate::{Ir, VarId};
 
 pub struct DepIterator<'a> {
@@ -56,5 +57,32 @@ impl<'a> Iterator for SeIterator<'a> {
             }
         }
         None
+    }
+}
+
+pub struct MutSeVisitor<'a> {
+    pub ir: &'a mut Ir,
+    pub discovered: HashSet<VarId>,
+}
+
+impl<'a> MutSeVisitor<'a> {
+    pub fn visit(&mut self, id: VarId, f: &impl Fn(&mut Ir, VarId) -> bool) {
+        if !self.discovered.contains(&id) {
+            let var = self.ir.var(id);
+            let refs = var
+                .deps
+                .iter()
+                .chain(var.side_effects.iter())
+                .map(|id| *id)
+                .collect::<Vec<_>>();
+
+            if f(self.ir, id) {
+                for id in refs {
+                    self.visit(id, f);
+                }
+            }
+
+            self.discovered.insert(id);
+        }
     }
 }
