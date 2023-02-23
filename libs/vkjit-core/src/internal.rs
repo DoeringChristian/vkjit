@@ -551,6 +551,11 @@ impl Ir {
         trace!("Executing Computations...");
         unsafe { self.backend.device.device_wait_idle().unwrap() };
 
+        trace!("Decrementing reference counters for schedule variables...");
+        for id in self.schedule.clone() {
+            self.dec_ref_count(id);
+        }
+
         trace!("Overwriting Evaluated Variables...");
         // Overwrite variables
         for (i, (_, arr)) in dst.into_iter().enumerate() {

@@ -190,11 +190,17 @@ mod test {
         let mut ir = Ir::new();
 
         let x = ir.array_f32(&[1., 2., 3.]);
+        let c = ir.const_f32(1.);
 
+        let y = ir.add(x, c);
+
+        ir.dec_ref_count(c);
         ir.dec_ref_count(x);
 
-        assert_eq!(ir.vars.len(), 1);
+        ir.eval(&[y]);
+
+        assert_eq!(ir.vars.len(), 3);
         assert_eq!(ir.vars[0].ref_count, 0);
-        assert_eq!(ir.backend.arrays.len(), 0);
+        assert_eq!(ir.backend.arrays.len(), 1);
     }
 }
