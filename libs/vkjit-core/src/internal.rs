@@ -108,6 +108,7 @@ pub struct Var {
     pub(crate) side_effects: Vec<VarId>,
     //pub array: Option<Arc<array::Array>>,
     ty: VarType,
+    ref_count: usize,
 }
 impl Var {
     pub fn ty(&self) -> &VarType {
@@ -198,9 +199,20 @@ impl Ir {
             side_effects: Vec::new(),
             op,
             ty,
+            ref_count: 1,
         })
     }
+    ///
+    /// Push a variable to the tree and increment reference counters for dependencies and side
+    /// effects. TODO: How should we handle side effect refcount.
+    ///
     fn push_var(&mut self, var: Var) -> VarId {
+        for id in var.deps.iter() {
+            self.inc_ref_count(*id);
+        }
+        for id in var.side_effects.iter() {
+            self.inc_ref_count(*id);
+        }
         let id = self.vars.len();
         self.vars.push(var);
         VarId(id)
@@ -310,6 +322,7 @@ impl Ir {
             op: Op::Binding,
             deps: vec![],
             side_effects: vec![],
+            ref_count: 1,
         });
         self.backend.arrays.insert(
             id,
@@ -327,6 +340,7 @@ impl Ir {
             op: Op::Binding,
             deps: vec![],
             side_effects: vec![],
+            ref_count: 1,
         });
         self.backend.arrays.insert(
             id,
@@ -344,6 +358,7 @@ impl Ir {
             op: Op::Binding,
             deps: vec![],
             side_effects: vec![],
+            ref_count: 1,
         });
         self.backend.arrays.insert(
             id,
@@ -368,7 +383,9 @@ impl Ir {
         let ty = src.ty.clone();
         let var = self.new_var(Op::SetAttr(idx), vec![src_id], src.ty.clone());
         let dst = self.var_mut(dst_id);
+
         dst.side_effects.push(var);
+        self.inc_ref_count(var); // Need to increment ref count
     }
     pub fn gather(&mut self, src_id: VarId, idx_id: VarId) -> VarId {
         let src = &self.var(src_id);
@@ -381,14 +398,16 @@ impl Ir {
         idx_id: VarId,
         active_id: Option<VarId>,
     ) {
-        let src = &self.var(src_id);
         let mut deps = vec![dst_id, idx_id];
         active_id.and_then(|id| {
             deps.push(id);
             Some(())
         });
+
+        let src = &self.var(src_id);
         let var = self.new_var(Op::Scatter, deps, src.ty.clone());
         self.var_mut(src_id).side_effects.push(var);
+        self.inc_ref_count(var); // Increment ref count for pushing to side-effects
     }
     pub fn is_buffer(&self, id: &VarId) -> bool {
         self.backend.arrays.contains_key(id)
@@ -436,6 +455,27 @@ impl Ir {
         let slice = screen_13::prelude::Buffer::mapped_slice(&self.backend.arrays[&id].buf);
         assert!(var.ty.type_id() == TypeId::of::<T>());
         cast_slice(slice)
+    }
+    pub fn dec_ref_count(&mut self, id: VarId) {
+        let mut var = self.var_mut(id);
+        var.ref_count -= 1;
+        if var.ref_count == 0 {
+            let refs = var
+                .deps
+                .iter()
+                .chain(var.side_effects.iter())
+                .map(|id| *id)
+                .collect::<Vec<_>>();
+            for id in refs {
+                self.dec_ref_count(id);
+            }
+
+            self.backend.arrays.remove(&id);
+        }
+    }
+    pub fn inc_ref_count(&mut self, id: VarId) {
+        let mut var = self.var_mut(id);
+        var.ref_count += 1;
     }
     pub fn schedule(&mut self, schedule: &[VarId]) {
         self.schedule.extend_from_slice(schedule);
@@ -521,6 +561,7 @@ impl Ir {
                 deps: vec![],
                 side_effects: vec![],
                 ty: arr.ty.clone(),
+                ref_count: 1,
             };
             self.backend.arrays.insert(id, arr);
         }

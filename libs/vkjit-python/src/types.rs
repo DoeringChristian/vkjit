@@ -81,8 +81,14 @@ impl TryFrom<&PyAny> for Var {
 }
 
 #[pyclass]
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Var(VarId);
+
+impl Drop for Var {
+    fn drop(&mut self) {
+        IR.lock().unwrap().dec_ref_count(self.0);
+    }
+}
 
 impl Var {
     pub fn id(&self) -> VarId {
