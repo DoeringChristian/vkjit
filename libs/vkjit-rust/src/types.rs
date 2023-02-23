@@ -46,7 +46,9 @@ macro_rules! bop {
 
                 fn [<$bop:lower>](self, rhs: T) -> Self::Output {
                     let rhs = rhs.into();
-                    Self(IR.lock().unwrap().[<$bop:lower>](self.0, rhs.0))
+                    let ret = Self(IR.lock().unwrap().[<$bop:lower>](self.0, rhs.0));
+                    drop(rhs);
+                    ret
                 }
             }
         }
