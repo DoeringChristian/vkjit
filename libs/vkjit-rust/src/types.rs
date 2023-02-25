@@ -5,7 +5,7 @@ use paste::paste;
 use vkjit_core::vartype::VarType;
 use vkjit_core::VarId;
 
-use crate::{select, IR};
+use crate::{gather, select, IR};
 
 macro_rules! from_const {
     ($ty:ident) => {
@@ -165,6 +165,9 @@ impl Var {
             .scatter(self.0, to.0, idx.0, with.clone().map(|with| with.0));
         drop(idx);
         drop(with);
+    }
+    pub fn get(&self, idx: impl Into<Var>) -> Var {
+        gather(self.clone(), idx)
     }
 }
 
