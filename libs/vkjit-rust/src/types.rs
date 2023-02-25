@@ -64,6 +64,21 @@ macro_rules! bop {
     };
 }
 
+macro_rules! named_bop {
+    ($bop:ident) => {
+        paste! {
+            impl Var {
+                pub fn [<$bop:lower>](&self, rhs: impl Into<Var>) -> Self{
+                    let rhs = rhs.into();
+                    let ret = Self(IR.lock().unwrap().[<$bop:lower>](self.0, rhs.0));
+                    drop(rhs);
+                    ret
+                }
+            }
+        }
+    };
+}
+
 from_const!(f32);
 from_const!(i32);
 from_const!(u32);
@@ -120,3 +135,9 @@ bop!(Add);
 bop!(Sub);
 bop!(Mul);
 bop!(Div);
+named_bop!(Lt);
+named_bop!(Gt);
+named_bop!(Eq);
+named_bop!(Leq);
+named_bop!(Geq);
+named_bop!(Neq);
