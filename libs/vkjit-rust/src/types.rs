@@ -5,7 +5,7 @@ use paste::paste;
 use vkjit_core::vartype::VarType;
 use vkjit_core::VarId;
 
-use crate::IR;
+use crate::{select, IR};
 
 macro_rules! from_const {
     ($ty:ident) => {
@@ -106,7 +106,7 @@ pub struct Var(VarId);
 
 impl Debug for Var {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut ir = IR.lock().unwrap();
+        let ir = IR.lock().unwrap();
         if ir.is_buffer(&self.0) {
             f.debug_tuple("Var")
                 .field(&ir.str(self.0).as_str())
@@ -144,6 +144,15 @@ impl Var {
         let var = var.into();
         IR.lock().unwrap().setattr(self.0, var.0, idx);
         drop(var);
+    }
+    pub fn then_else(&self, then: impl Into<Var>, other: impl Into<Var>) -> Self {
+        let then = then.into();
+        let other = other.into();
+
+        let ret = Var::from(IR.lock().unwrap().select(self.id(), then.id(), other.id()));
+        drop(then);
+        drop(other);
+        ret
     }
 }
 

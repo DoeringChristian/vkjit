@@ -8,9 +8,9 @@ fn main() {
         let x = Var::from(vec![1, 2, 3]);
         let y = Var::from(1);
 
-        let s = Var::from(&[x, y][..]);
+        let s = Var::from(&[x.clone().leq(2).then_else(x, 6), y][..]);
 
-        s.getattr(1)
+        s.getattr(0)
     };
 
     println!("{:#?}", IR.lock().unwrap());
