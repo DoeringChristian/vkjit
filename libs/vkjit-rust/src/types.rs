@@ -154,6 +154,18 @@ impl Var {
         drop(other);
         ret
     }
+    pub fn scatter(&self, to: Var, idx: impl Into<Var>) {
+        self.scatter_with(to, idx, None);
+    }
+    pub fn scatter_with(&self, to: Var, idx: impl Into<Var>, with: impl Into<Option<Var>>) {
+        let idx = idx.into();
+        let with = with.into();
+        IR.lock()
+            .unwrap()
+            .scatter(self.0, to.0, idx.0, with.clone().map(|with| with.0));
+        drop(idx);
+        drop(with);
+    }
 }
 
 bop!(Add);

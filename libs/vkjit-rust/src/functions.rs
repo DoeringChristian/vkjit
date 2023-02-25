@@ -1,9 +1,9 @@
-use vkjit_core::{AsVarType, VarId};
+use vkjit_core::{AsVarType, VarId, VarType};
 
 use crate::*;
 
-pub fn arange<T: Into<Var> + AsVarType>(num: usize) -> Var {
-    Var::from(IR.lock().unwrap().arange(T::as_var_type(), num))
+pub fn arange(ty: VarType, num: usize) -> Var {
+    Var::from(IR.lock().unwrap().arange(ty, num))
 }
 
 pub fn linspace(start: impl Into<Var>, stop: impl Into<Var>, num: usize) -> Var {
@@ -28,6 +28,18 @@ pub fn select(condition: impl Into<Var>, x: impl Into<Var>, y: impl Into<Var>) -
                      // better way
     drop(x);
     drop(y);
+    ret
+}
+pub fn gather_with(from: Var, idx: impl Into<Var>, condition: impl Into<Option<Var>>) -> Var {
+    let idx = idx.into();
+
+    todo!()
+}
+pub fn gather(from: Var, idx: impl Into<Var>) -> Var {
+    let idx = idx.into();
+    let ret = Var::from(IR.lock().unwrap().gather(from.id(), idx.id()));
+    drop(idx);
+    drop(from);
     ret
 }
 
