@@ -261,7 +261,7 @@ impl Ir {
                     .iter()
                     .map(|elem| self.zeros(elem.clone()))
                     .collect::<Vec<_>>();
-                self.struct_init(elems)
+                self.struct_init(&elems)
             }
             VarType::Bool => self.const_bool(false),
             VarType::I32 => self.const_i32(0),
@@ -277,7 +277,7 @@ impl Ir {
                     .iter()
                     .map(|elem| self.ones(elem.clone()))
                     .collect::<Vec<_>>();
-                self.struct_init(elems)
+                self.struct_init(&elems)
             }
             VarType::Bool => self.const_bool(true),
             VarType::I32 => self.const_i32(1),
@@ -294,7 +294,7 @@ impl Ir {
             self.new_var(Op::Cast, vec![src], ty.clone())
         }
     }
-    pub fn struct_init(&mut self, vars: Vec<VarId>) -> VarId {
+    pub fn struct_init(&mut self, vars: &[VarId]) -> VarId {
         let elems = vars
             .iter()
             .map(|id| {
@@ -302,7 +302,7 @@ impl Ir {
                 var.ty.clone()
             })
             .collect::<Vec<_>>();
-        self.new_var(Op::StructInit, vars, VarType::Struct(elems))
+        self.new_var(Op::StructInit, vars.into(), VarType::Struct(elems))
     }
     pub fn const_f32(&mut self, val: f32) -> VarId {
         self.new_var(Op::Const(Const::Float32(val)), vec![], VarType::F32)

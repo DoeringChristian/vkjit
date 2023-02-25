@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::ops;
+use std::ops::{self, Index};
 
 use paste::paste;
 use vkjit_core::vartype::VarType;
@@ -88,6 +88,14 @@ from_slice!(f32);
 from_slice!(i32);
 from_slice!(u32);
 
+impl From<&[Var]> for Var {
+    fn from(vars: &[Var]) -> Self {
+        let vars = vars.iter().map(|var| var.0).collect::<Vec<_>>();
+        let id = IR.lock().unwrap().struct_init(&vars);
+        Self(id)
+    }
+}
+
 impl From<VarId> for Var {
     fn from(value: VarId) -> Self {
         Self(value)
@@ -128,6 +136,14 @@ impl Var {
     }
     pub fn ty(&self) -> VarType {
         IR.lock().unwrap().var(self.0).ty().clone()
+    }
+    pub fn getattr(&self, idx: usize) -> Self {
+        Self(IR.lock().unwrap().getattr(self.0, idx))
+    }
+    pub fn setattr(&self, var: impl Into<Var>, idx: usize) {
+        let var = var.into();
+        IR.lock().unwrap().setattr(self.0, var.0, idx);
+        drop(var);
     }
 }
 
