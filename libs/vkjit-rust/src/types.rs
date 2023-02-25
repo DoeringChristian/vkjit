@@ -51,6 +51,15 @@ macro_rules! bop {
                     ret
                 }
             }
+
+            impl<T: Into<Var>> ops::[<$bop Assign>]<T> for Var{
+                fn [<$bop:lower _assign>](&mut self, rhs: T) {
+                    let rhs = rhs.into();
+                    let ret = Self(IR.lock().unwrap().[<$bop:lower>](self.0, rhs.0));
+                    drop(rhs);
+                    *self = ret;
+                }
+            }
         }
     };
 }
