@@ -12,8 +12,26 @@ pub struct VulkanBackend {
     device: Arc<Device>,
 }
 
+impl Array for Arc<Buffer> {
+    fn device_address(&self) -> u64 {
+        Buffer::device_address(self)
+    }
+
+    fn map(&self) -> &[u8] {
+        Buffer::mapped_slice(&self)
+    }
+    fn size(&self) -> usize {
+        self.info.size as usize
+    }
+}
+
 impl Backend for VulkanBackend {
     type Array = Arc<Buffer>;
+    type Device = Arc<Device>;
+
+    fn device(&self) -> &Self::Device {
+        &self.device
+    }
 
     fn create() -> Self {
         let cfg = screen_13::prelude::DriverConfig::new().build();
@@ -21,29 +39,16 @@ impl Backend for VulkanBackend {
         Self { device }
     }
 
-    fn create_array<T: AsVarType + AsStd140>(&mut self, data: &[T]) -> Self::Array {
+    fn create_array_from_slice(&self, data: &[u8]) -> Self::Array {
         let count = data.len();
-        let size = T::std140_size_static() * count;
-        let buf = Arc::new({
-            let mut buf = Buffer::create(
-                &self.device,
-                BufferInfo::new_mappable(size as u64, vk::BufferUsageFlags::STORAGE_BUFFER),
-            )
-            .unwrap();
-            let mut writer = std140::Writer::new(Buffer::mapped_slice_mut(&mut buf));
-            writer.write(data).unwrap();
-            buf
-        });
+        let size = count;
+        let buf = Arc::new(
+            Buffer::create_from_slice(&self.device, vk::BufferUsageFlags::STORAGE_BUFFER, data)
+                .unwrap(),
+        );
         buf
     }
 
-    fn map_array<'a, T: AsVarType + AsStd140 + bytemuck::Pod>(
-        &mut self,
-        array: &'a Self::Array,
-    ) -> &'a [T] {
-        let slice = Buffer::mapped_slice(&array);
-        cast_slice(slice)
-    }
     fn execute(&self, kernel: &Kernel, arrays: &[(Binding, Self::Array)]) {
         trace!("Recording Render Graph...");
         let mut graph = RenderGraph::new();
@@ -91,6 +96,16 @@ impl Backend for VulkanBackend {
 
         trace!("Executing Computations...");
         unsafe { self.device.device_wait_idle().unwrap() };
+    }
+
+    fn create_array(&self, size: usize) -> Self::Array {
+        Arc::new(
+            Buffer::create(
+                &self.device,
+                BufferInfo::new_mappable(size as u64, vk::BufferUsageFlags::STORAGE_BUFFER),
+            )
+            .unwrap(),
+        )
     }
 }
 impl VulkanBackend {}

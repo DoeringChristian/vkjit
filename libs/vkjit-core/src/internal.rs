@@ -13,8 +13,10 @@ use log::{error, trace, warn};
 
 use crevice::std140::{self, AsStd140};
 
-use crate::array::{self, Array};
+// use crate::array::{self, Array};
 
+use crate::backend::vulkan::VulkanBackend;
+use crate::backend::{self, Array, Backend};
 use crate::iterators::{DepIterator, MutSeVisitor, SeIterator};
 use crate::vartype::*;
 
@@ -116,22 +118,22 @@ impl Var {
     }
 }
 
-#[derive(Debug)]
-pub struct Backend {
-    device: Arc<screen_13::prelude::Device>,
-}
+// #[derive(Debug)]
+// pub struct Backend {
+//     device: Arc<screen_13::prelude::Device>,
+// }
 
 pub struct Ir {
-    pub(crate) backend: Backend,
+    pub(crate) backend: VulkanBackend,
     pub(crate) vars: Vec<Var>,
     schedule: Vec<VarId>,
-    pub(crate) arrays: HashMap<VarId, array::Array>,
+    pub(crate) arrays: HashMap<VarId, <VulkanBackend as Backend>::Array>,
 }
 
 impl Debug for Ir {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut st = f.debug_struct("Ir");
-        st.field("backend", &self.backend);
+        // st.field("backend", &self.backend);
 
         for (i, x) in self.vars.iter().enumerate() {
             st.field(&format!("[{i}]"), x);
@@ -165,9 +167,7 @@ macro_rules! bop {
 impl Ir {
     pub fn new_sc13(device: &Arc<screen_13::driver::Device>) -> Self {
         Self {
-            backend: Backend {
-                device: device.clone(),
-            },
+            backend: VulkanBackend::create(),
             arrays: HashMap::default(),
             vars: Vec::default(),
             schedule: Vec::default(),
@@ -182,13 +182,13 @@ impl Ir {
         //     .unwrap();
         // let device = sc13.device.clone();
         Self {
-            backend: Backend { device },
+            backend: VulkanBackend::create(),
             arrays: HashMap::default(),
             vars: Vec::default(),
             schedule: Vec::default(),
         }
     }
-    pub fn array(&self, id: VarId) -> &array::Array {
+    pub fn array(&self, id: VarId) -> &<VulkanBackend as backend::Backend>::Array {
         &self.arrays[&id]
     }
     fn new_var(&mut self, op: Op, dependencies: Vec<VarId>, ty: VarType) -> VarId {
@@ -326,14 +326,8 @@ impl Ir {
             side_effects: vec![],
             ref_count: 1,
         });
-        self.arrays.insert(
-            id,
-            Array::from_slice(
-                &self.backend.device,
-                data,
-                vk::BufferUsageFlags::STORAGE_BUFFER,
-            ),
-        );
+        self.arrays
+            .insert(id, self.backend.create_array_from_slice(cast_slice(data)));
         id
     }
     pub fn array_i32(&mut self, data: &[i32]) -> VarId {
@@ -344,14 +338,8 @@ impl Ir {
             side_effects: vec![],
             ref_count: 1,
         });
-        self.arrays.insert(
-            id,
-            Array::from_slice(
-                &self.backend.device,
-                data,
-                vk::BufferUsageFlags::STORAGE_BUFFER,
-            ),
-        );
+        self.arrays
+            .insert(id, self.backend.create_array_from_slice(cast_slice(data)));
         id
     }
     pub fn array_u32(&mut self, data: &[u32]) -> VarId {
@@ -362,14 +350,8 @@ impl Ir {
             side_effects: vec![],
             ref_count: 1,
         });
-        self.arrays.insert(
-            id,
-            Array::from_slice(
-                &self.backend.device,
-                data,
-                vk::BufferUsageFlags::STORAGE_BUFFER,
-            ),
-        );
+        self.arrays
+            .insert(id, self.backend.create_array_from_slice(cast_slice(data)));
         id
     }
     pub fn getattr(&mut self, src_id: VarId, idx: usize) -> VarId {
@@ -429,7 +411,7 @@ impl Ir {
     }
     pub fn str(&self, id: VarId) -> String {
         let var = &self.var(id);
-        let slice = screen_13::prelude::Buffer::mapped_slice(&self.arrays[&id].buf);
+        let slice = self.arrays[&id].map();
         match var.ty {
             VarType::F32 => {
                 format!("{:?}", cast_slice::<_, f32>(slice))
@@ -448,7 +430,8 @@ impl Ir {
     }
     pub fn print_buffer(&self, id: VarId) {
         let var = &self.var(id);
-        let slice = screen_13::prelude::Buffer::mapped_slice(&self.arrays[&id].buf);
+        // let slice = screen_13::prelude::Buffer::mapped_slice(&self.arrays[&id].buf);
+        let slice = self.arrays[&id].map();
         match var.ty {
             VarType::F32 => {
                 println!("{:?}", cast_slice::<_, f32>(slice))
@@ -467,7 +450,8 @@ impl Ir {
     }
     pub fn as_slice<T: bytemuck::Pod>(&self, id: VarId) -> &[T] {
         let var = &self.var(id);
-        let slice = screen_13::prelude::Buffer::mapped_slice(&self.arrays[&id].buf);
+        // let slice = screen_13::prelude::Buffer::mapped_slice(&self.arrays[&id].buf);
+        let slice = &self.arrays[&id].map();
         assert!(var.ty.type_id() == TypeId::of::<T>());
         cast_slice(slice)
     }
@@ -514,7 +498,7 @@ impl Ir {
         // Record render graph
         trace!("Recording Render Graph...");
         let mut graph = RenderGraph::new();
-        let mut pool = LazyPool::new(&self.backend.device);
+        let mut pool = LazyPool::new(&self.backend.device());
 
         let module = k.b.module();
         // #[cfg(test)]
@@ -523,7 +507,7 @@ impl Ir {
         let spv = module.assemble();
         let pipeline = Arc::new(
             ComputePipeline::create(
-                &self.backend.device,
+                &self.backend.device(),
                 screen_13::prelude::ComputePipelineInfo::default(),
                 screen_13::prelude::Shader::new_compute(spv),
             )
@@ -584,7 +568,7 @@ impl Ir {
         graph.resolve().submit(&mut pool, 0).unwrap();
 
         trace!("Executing Computations...");
-        unsafe { self.backend.device.device_wait_idle().unwrap() };
+        unsafe { self.backend.device().device_wait_idle().unwrap() };
 
         trace!("Overwriting Evaluated Variables...");
         // Overwrite variables
@@ -597,7 +581,7 @@ impl Ir {
                 op: Op::Binding,
                 deps: vec![],
                 side_effects: vec![],
-                ty: arr.ty.clone(),
+                ty: var.ty().clone(),
                 ref_count,
             };
             trace!("with variable {:?}", var);
@@ -645,7 +629,7 @@ pub struct Kernel {
     pub num: Option<usize>,
 
     pub buffer_ref_ty: HashMap<VarId, (u32, u32)>,
-    pub arrays: Vec<Arc<Array>>,
+    pub arrays: Vec<<VulkanBackend as backend::Backend>::Array>,
 
     // Variables used by many kernels
     pub idx: Option<u32>,
@@ -745,14 +729,13 @@ impl Kernel {
         trace!("Evaluating Kernel size of schedule {:?}...", schedule);
         for id in ir.iter_dep(schedule) {
             trace!("\tVisiting Variable {}", id.0);
-            let var = &ir.var(id);
+            let var = ir.var(id);
+            let ty = var.ty();
             match var.op {
                 Op::Binding => {
-                    trace!("\t\tFount Binding of size {}", ir.arrays[&id].count());
-                    self.set_num(ir.arrays[&id].count());
+                    self.set_num(ir.arrays[&id].size() / ty.stride());
                 }
                 Op::Arange(num) => {
-                    trace!("\t\tFount Arange of num {}", num);
                     self.set_num(num);
                 }
                 _ => (),
@@ -1159,7 +1142,7 @@ impl Kernel {
             };
         }
     }
-    pub fn compile(&mut self, ir: &Ir) -> Vec<Array> {
+    pub fn compile(&mut self, ir: &Ir) -> Vec<<VulkanBackend as backend::Backend>::Array> {
         trace!("Compiling Kernel...");
         // Determine kernel size
         trace!("Determining Kernel size...");
@@ -1212,12 +1195,7 @@ impl Kernel {
                 let ptr_types = self.buffer_ptr_types(&ty);
 
                 // Create dst arrays
-                let arr = Array::create(
-                    &ir.backend.device,
-                    ty,
-                    self.num.expect("Could not determine size of kernel!"),
-                    vk::BufferUsageFlags::STORAGE_BUFFER,
-                );
+                let arr = ir.backend.create_array(self.num.unwrap() * ty.stride());
                 (arr, ptr_types)
             })
             .collect::<Vec<_>>();
@@ -1299,6 +1277,7 @@ impl Kernel {
             vec![self.global_invocation_id.unwrap()],
         );
 
+        // Return destination arrays
         dst
     }
     pub fn assemble(&self) -> Vec<u32> {
