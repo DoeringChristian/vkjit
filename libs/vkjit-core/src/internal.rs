@@ -261,7 +261,11 @@ impl Ir {
                     .iter()
                     .map(|elem| self.zeros(elem.clone()))
                     .collect::<Vec<_>>();
-                self.struct_init(&elems)
+                let ret = self.struct_init(&elems);
+                for elem in elems {
+                    self.dec_ref_count(elem); // Decrement refcount since reference is lost
+                }
+                ret
             }
             VarType::Bool => self.const_bool(false),
             VarType::I32 => self.const_i32(0),
@@ -490,14 +494,14 @@ impl Ir {
         var.ref_count += 1;
     }
     pub fn clear_schedule(&mut self) {
-        for id in self.schedule {
+        for id in self.schedule.clone() {
             self.dec_ref_count(id);
         }
         self.schedule.clear();
     }
     pub fn schedule(&mut self, schedule: &[VarId]) {
         for id in schedule {
-            self.inc_ref_count(id);
+            self.inc_ref_count(*id);
         }
         self.schedule.extend_from_slice(schedule);
     }
@@ -573,22 +577,21 @@ impl Ir {
         trace!("Executing Computations...");
         unsafe { self.backend.device.device_wait_idle().unwrap() };
 
-        trace!("Decrementing reference counters for schedule variables...");
-        for id in self.schedule.clone() {
-            self.dec_ref_count(id);
-        }
-
         trace!("Overwriting Evaluated Variables...");
         // Overwrite variables
         for (i, (_, arr)) in dst.into_iter().enumerate() {
             let id = self.schedule[i];
-            *self.var_mut(id) = Var {
+            let var = self.var_mut(id);
+            trace!("Overwriting variable {:?}", var);
+            let ref_count = var.ref_count;
+            *var = Var {
                 op: Op::Binding,
                 deps: vec![],
                 side_effects: vec![],
                 ty: arr.ty.clone(),
-                ref_count: 1,
+                ref_count,
             };
+            trace!("with variable {:?}", var);
             self.backend.arrays.insert(id, arr);
         }
 

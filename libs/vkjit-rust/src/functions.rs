@@ -52,6 +52,10 @@ pub fn gather_with(from: Var, idx: impl Into<Var>, condition: impl Into<Option<V
     ret
 }
 
+pub fn repr_ir() -> String {
+    format!("{:#?}", IR.lock().unwrap())
+}
+
 #[macro_export]
 macro_rules! eval {
     ($($var:expr),*) => {
