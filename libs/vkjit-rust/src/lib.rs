@@ -12,3 +12,4 @@ lazy_static! {
 
 pub use functions::*;
 pub use types::*;
+pub use vkjit_core::vartype::VarType;

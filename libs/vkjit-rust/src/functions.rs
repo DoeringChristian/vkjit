@@ -2,6 +2,10 @@ use vkjit_core::{AsVarType, VarId, VarType};
 
 use crate::*;
 
+pub fn zeros(ty: VarType) -> Var {
+    Var::from(IR.lock().unwrap().zeros(ty))
+}
+
 pub fn arange(ty: VarType, num: usize) -> Var {
     Var::from(IR.lock().unwrap().arange(ty, num))
 }
@@ -14,8 +18,6 @@ pub fn linspace(start: impl Into<Var>, stop: impl Into<Var>, num: usize) -> Var 
             .unwrap()
             .linspace(start.ty(), start.id(), stop.id(), num),
     );
-    drop(start);
-    drop(stop);
     ret
 }
 pub fn select(condition: impl Into<Var>, x: impl Into<Var>, y: impl Into<Var>) -> Var {
@@ -24,10 +26,6 @@ pub fn select(condition: impl Into<Var>, x: impl Into<Var>, y: impl Into<Var>) -
     let y = y.into();
 
     let ret = Var::from(IR.lock().unwrap().select(condition.id(), x.id(), y.id()));
-    drop(condition); // Dropping before would be bad and could cause deadlocks. TODO: figure out
-                     // better way
-    drop(x);
-    drop(y);
     ret
 }
 pub fn gather(from: Var, idx: impl Into<Var>) -> Var {
@@ -65,4 +63,37 @@ macro_rules! eval {
 pub fn eval_internal(schedule: &[VarId]) {
     let mut ir = IR.lock().unwrap();
     ir.eval(&schedule);
+}
+
+#[cfg(test)]
+mod test {
+    use crate::*;
+    #[test]
+    fn test_scatter() {
+        pretty_env_logger::init();
+
+        let x = Var::from(vec![1., 2., 3.]);
+        let mut y = Var::from(7.);
+        let idx = arange(VarType::U32, 3);
+
+        y.scatter(x.clone(), idx);
+
+        eval!(y);
+
+        assert_eq!(x.to_vec::<f32>(), vec![7., 7., 7.]);
+    }
+    #[test]
+    fn setattr() {
+        pretty_env_logger::init();
+
+        let x = Var::from(vec![1., 2., 3.]);
+
+        let mut st = zeros(VarType::Struct(vec![VarType::F32, VarType::F32]));
+
+        st.setattr(x.clone(), 0);
+
+        eval!(x);
+
+        todo!()
+    }
 }

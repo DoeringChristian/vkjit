@@ -1458,6 +1458,7 @@ dependencies = [
 name = "vkjit-rust"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "lazy_static",
  "log",
  "paste",

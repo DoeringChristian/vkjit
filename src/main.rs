@@ -4,19 +4,15 @@ use vkjit_rust::*;
 fn main() {
     pretty_env_logger::init();
 
-    let x = Var::from(vec![1, 2, 3]);
-    let i = arange(vkjit_core::VarType::U32, 3);
-    // dbg!(i.id());
-    let const2 = Var::from(2);
-    let cond = i.clone().lt(const2);
-    dbg!(cond.id());
+    let x = Var::from(vec![1., 2., 3.]);
 
-    let x = gather_with(x, i.clone(), cond);
+    let mut st = zeros(VarType::Struct(vec![VarType::F32, VarType::F32]));
 
-    println!("{:#?}", IR.lock().unwrap());
+    st.setattr(x.clone(), 0);
 
-    eval!(x);
+    let y = st.getattr(0);
 
-    println!("{:?}", x);
-    println!("{:#?}", IR.lock().unwrap());
+    eval!(y);
+
+    println!("{:?}", y);
 }

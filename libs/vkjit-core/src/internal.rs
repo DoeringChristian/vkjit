@@ -174,13 +174,13 @@ impl Ir {
         }
     }
     pub fn new() -> Self {
-        let cfg = screen_13::prelude::DriverConfig::new().build();
-        let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
-        // let sc13 = screen_13::prelude::EventLoop::new()
-        //     .debug(true)
-        //     .build()
-        //     .unwrap();
-        // let device = sc13.device.clone();
+        // let cfg = screen_13::prelude::DriverConfig::new().build();
+        // let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
+        let sc13 = screen_13::prelude::EventLoop::new()
+            .debug(true)
+            .build()
+            .unwrap();
+        let device = sc13.device.clone();
         Self {
             backend: Backend {
                 device,
@@ -378,14 +378,16 @@ impl Ir {
         };
         self.new_var(Op::GetAttr(idx), vec![src_id], ty)
     }
-    pub fn setattr(&mut self, dst_id: VarId, src_id: VarId, idx: usize) {
-        let src = &self.var(src_id);
-        let ty = src.ty.clone();
-        let var = self.new_var(Op::SetAttr(idx), vec![src_id], src.ty.clone());
-        let dst = self.var_mut(dst_id);
+    pub fn setattr(&mut self, dst_id: VarId, src_id: VarId, idx: usize) -> VarId {
+        let dst = self.var(dst_id);
 
-        dst.side_effects.push(var);
-        self.inc_ref_count(var); // Need to increment ref count
+        self.push_var(Var {
+            op: Op::SetAttr(idx),
+            deps: vec![src_id, dst_id],
+            side_effects: vec![],
+            ty: dst.ty().clone(),
+            ref_count: 1,
+        })
     }
     pub fn gather(&mut self, src_id: VarId, idx_id: VarId, active_id: Option<VarId>) -> VarId {
         let src = &self.var(src_id);
@@ -404,17 +406,21 @@ impl Ir {
         dst_id: VarId,
         idx_id: VarId,
         active_id: Option<VarId>,
-    ) {
-        let mut deps = vec![dst_id, idx_id];
+    ) -> VarId {
+        let mut deps = vec![src_id, idx_id];
         active_id.and_then(|id| {
             deps.push(id);
             Some(())
         });
 
-        let src = &self.var(src_id);
-        let var = self.new_var(Op::Scatter, deps, src.ty.clone());
-        self.var_mut(src_id).side_effects.push(var);
-        self.inc_ref_count(var); // Increment ref count for pushing to side-effects
+        let src = self.var(src_id);
+        self.push_var(Var {
+            op: Op::Scatter,
+            deps,
+            side_effects: vec![dst_id],
+            ty: src.ty().clone(),
+            ref_count: 1,
+        })
     }
     pub fn is_buffer(&self, id: &VarId) -> bool {
         self.backend.arrays.contains_key(id)
@@ -765,17 +771,20 @@ impl Kernel {
     /// Traverse kernel and determine size. Panics if kernel size mismatches
     ///
     fn record_kernel_size(&mut self, schedule: &[VarId], ir: &Ir) {
-        trace!("Evaluating Kernel size...");
+        trace!("Evaluating Kernel size of schedule {:?}...", schedule);
         for id in ir.iter_dep(schedule) {
-            trace!("Visiting Variable {}", id.0);
+            trace!("\tVisiting Variable {}", id.0);
             let var = &ir.var(id);
             match var.op {
                 Op::Binding => {
-                    trace!("\tFount Binding of size {}", ir.backend.arrays[&id].count());
+                    trace!(
+                        "\t\tFount Binding of size {}",
+                        ir.backend.arrays[&id].count()
+                    );
                     self.set_num(ir.backend.arrays[&id].count());
                 }
                 Op::Arange(num) => {
-                    trace!("\tFount Arange of num {}", num);
+                    trace!("\t\tFount Arange of num {}", num);
                     self.set_num(num);
                 }
                 _ => (),
@@ -1025,7 +1034,23 @@ impl Kernel {
                 let ptr = self.b.access_chain(ptr_ty, None, src, vec![idx]).unwrap();
                 self.b.load(ty, None, ptr, None, None).unwrap()
             }
-            Op::SetAttr(elem) => 0, // TODO: Better return
+            Op::SetAttr(elem) => {
+                let src = self.record_ops(var.deps[0], ir);
+                let dst = self.record_ops(var.deps[1], ir);
+
+                let src_ty = ir.var(var.deps[0]).ty();
+                let src_ty = src_ty.to_spirv(&mut self.b);
+                let ptr_ty = self
+                    .b
+                    .type_pointer(None, spirv::StorageClass::Function, src_ty);
+                let int_ty = self.b.type_int(32, 1);
+                let idx = self.b.constant_u32(int_ty, elem as u32);
+
+                let ptr = self.b.access_chain(ptr_ty, None, dst, vec![idx]).unwrap();
+                self.b.store(ptr, src, None, None).unwrap();
+
+                dst
+            } // TODO: Better return
             Op::StructInit => {
                 let ty = var.ty.to_spirv(&mut self.b);
                 let ty_ptr = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
@@ -1062,7 +1087,28 @@ impl Kernel {
                 }
                 _ => panic!("Can only gather from buffer!"),
             },
-            Op::Scatter => 0, // TODO: better return
+            Op::Scatter => {
+                trace!("Record Scattering.");
+                let src = self.record_ops(var.deps[0], ir);
+                assert!(
+                    ir.is_buffer(&var.side_effects[0]),
+                    "Cannot scatter into non buffer variables!"
+                );
+                let ty = var.ty.to_spirv(&mut self.b);
+                let idx = self.record_ops(var.deps[1], ir);
+                let ptr = self.access_binding_at(var.side_effects[0], ir, idx);
+
+                if var.deps.len() >= 4 {
+                    let condition_id = self.record_ops(var.deps[3], ir);
+                    self.record_if(condition_id, |s| {
+                        s.b.store(ptr, src, None, None).unwrap();
+                    });
+                } else {
+                    self.b.store(ptr, src, None, None).unwrap();
+                }
+
+                src
+            } // TODO: better return
             Op::Arange(num) => {
                 //self.set_num(num);
                 let ret = match var.ty {
@@ -1106,42 +1152,42 @@ impl Kernel {
             _ => unimplemented!(),
         };
         self.op_results.insert(id, ret);
-        // Evaluate side effects like setattr
-        for id in var.side_effects.iter() {
-            let se_spv = self.record_ops(*id, ir);
-            let se = &ir.var(*id);
-            match se.op {
-                Op::SetAttr(elem) => {
-                    let ty = se.ty.to_spirv(&mut self.b);
-                    let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
-                    let int_ty = self.b.type_int(32, 1);
-                    let idx = self.b.constant_u32(int_ty, elem as u32);
-
-                    let src = self.record_ops(se.deps[0], ir);
-
-                    let ptr = self.b.access_chain(ptr_ty, None, ret, vec![idx]).unwrap();
-                    self.b.store(ptr, src, None, None).unwrap();
-                }
-                Op::Scatter => match ir.var(se.deps[0]).op {
-                    Op::Binding => {
-                        let ty = se.ty.to_spirv(&mut self.b);
-                        let idx = self.record_ops(se.deps[1], ir);
-                        let ptr = self.access_binding_at(se.deps[0], ir, idx);
-
-                        if se.deps.len() >= 3 {
-                            let condition_id = self.record_ops(se.deps[2], ir);
-                            self.record_if(condition_id, |s| {
-                                s.b.store(ptr, ret, None, None).unwrap();
-                            });
-                        } else {
-                            self.b.store(ptr, ret, None, None).unwrap();
-                        }
-                    }
-                    _ => panic!("Cannot scatter into non buffer variable!"),
-                },
-                _ => {}
-            }
-        }
+        // // Evaluate side effects like setattr
+        // for id in var.side_effects.iter() {
+        //     let se_spv = self.record_ops(*id, ir);
+        //     let se = &ir.var(*id);
+        //     match se.op {
+        //         Op::SetAttr(elem) => {
+        //             let ty = se.ty.to_spirv(&mut self.b);
+        //             let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
+        //             let int_ty = self.b.type_int(32, 1);
+        //             let idx = self.b.constant_u32(int_ty, elem as u32);
+        //
+        //             let src = self.record_ops(se.deps[0], ir);
+        //
+        //             let ptr = self.b.access_chain(ptr_ty, None, ret, vec![idx]).unwrap();
+        //             self.b.store(ptr, src, None, None).unwrap();
+        //         }
+        //         Op::Scatter => match ir.var(se.deps[0]).op {
+        //             Op::Binding => {
+        //                 let ty = se.ty.to_spirv(&mut self.b);
+        //                 let idx = self.record_ops(se.deps[1], ir);
+        //                 let ptr = self.access_binding_at(se.deps[0], ir, idx);
+        //
+        //                 if se.deps.len() >= 3 {
+        //                     let condition_id = self.record_ops(se.deps[2], ir);
+        //                     self.record_if(condition_id, |s| {
+        //                         s.b.store(ptr, ret, None, None).unwrap();
+        //                     });
+        //                 } else {
+        //                     self.b.store(ptr, ret, None, None).unwrap();
+        //                 }
+        //             }
+        //             _ => panic!("Cannot scatter into non buffer variable!"),
+        //         },
+        //         _ => {}
+        //     }
+        // }
         ret
     }
     ///

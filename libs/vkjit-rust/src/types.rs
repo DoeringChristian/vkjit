@@ -149,10 +149,13 @@ impl Var {
     pub fn getattr(&self, idx: usize) -> Self {
         Self(IR.lock().unwrap().getattr(self.0, idx))
     }
-    pub fn setattr(&self, var: impl Into<Var>, idx: usize) {
+    pub fn setattr(&mut self, var: impl Into<Var>, idx: usize) {
         let var = var.into();
-        IR.lock().unwrap().setattr(self.0, var.0, idx);
-        drop(var);
+        let ret = {
+            let mut ir = IR.lock().unwrap();
+            Self(ir.setattr(self.0, var.0, idx))
+        };
+        *self = ret
     }
     pub fn then_else(&self, then: impl Into<Var>, other: impl Into<Var>) -> Self {
         let then = then.into();
@@ -163,20 +166,33 @@ impl Var {
         drop(other);
         ret
     }
-    pub fn scatter(&self, to: Var, idx: impl Into<Var>) {
-        self.scatter_with(to, idx, None);
+    pub fn scatter(&mut self, to: Var, idx: impl Into<Var>) {
+        self.scatter_with(to, idx, None)
     }
-    pub fn scatter_with(&self, to: Var, idx: impl Into<Var>, with: impl Into<Option<Var>>) {
+    pub fn scatter_with(
+        &mut self,
+        to: Var,
+        idx: impl Into<Var>,
+        condition: impl Into<Option<Var>>,
+    ) {
         let idx = idx.into();
-        let with = with.into();
-        IR.lock()
-            .unwrap()
-            .scatter(self.0, to.0, idx.0, with.clone().map(|with| with.0));
-        drop(idx);
-        drop(with);
+        let condition = condition.into();
+        let cond = condition.as_ref().map(|condition| condition.id());
+
+        log::trace!("Scatter from {:?} to {:?} with {:?}", self.0, to.id(), cond);
+
+        let ret = {
+            let mut ir = IR.lock().unwrap();
+            Self(ir.scatter(self.0, to.0, idx.0, cond))
+        };
+        *self = ret;
     }
     pub fn get(&self, idx: impl Into<Var>) -> Var {
         gather(self.clone(), idx)
+    }
+    pub fn to_vec<T: bytemuck::Pod>(&self) -> Vec<T> {
+        let ir = IR.lock().unwrap();
+        Vec::from(ir.as_slice::<T>(self.0))
     }
 }
 
