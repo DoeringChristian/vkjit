@@ -638,13 +638,10 @@ pub struct Kernel {
     pub bindings: HashMap<VarId, Binding>,
     pub arrays: HashMap<VarId, u32>,
     pub array_structs: HashMap<VarType, u32>,
-    pub structs: HashMap<Vec<VarType>, u32>,
 
     // Variables used by many kernels
     pub idx: Option<u32>,
     pub global_invocation_id: Option<u32>,
-
-    pub traversal_set: HashSet<VarId>,
 }
 impl Debug for Kernel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -667,11 +664,9 @@ impl Kernel {
             bindings: HashMap::default(),
             arrays: HashMap::default(),
             array_structs: HashMap::default(),
-            structs: HashMap::default(),
             num: None,
             idx: None,
             global_invocation_id: None,
-            traversal_set: HashSet::default(),
         }
     }
     fn binding(&mut self, id: VarId, access: Access) -> Binding {
