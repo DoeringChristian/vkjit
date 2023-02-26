@@ -639,6 +639,8 @@ pub struct Kernel {
     pub arrays: HashMap<VarId, u32>,
     pub array_structs: HashMap<VarType, u32>,
 
+    pub buffer_ref_ty: HashMap<VarId, (u32, u32)>,
+
     // Variables used by many kernels
     pub idx: Option<u32>,
     pub global_invocation_id: Option<u32>,
@@ -683,6 +685,7 @@ impl Kernel {
             bindings: HashMap::default(),
             arrays: HashMap::default(),
             array_structs: HashMap::default(),
+            buffer_ref_ty: HashMap::default(),
             num: None,
             idx: None,
             global_invocation_id: None,
@@ -765,23 +768,28 @@ impl Kernel {
     /// Return a pointer to the binding at an index
     /// Note that idx is a spirv variable
     ///
-    fn access_binding_at(&mut self, id: VarId, ir: &Ir, idx: u32) -> u32 {
-        let var = &ir.var(id);
-        let ty = var.ty.to_spirv(&mut self.b);
-        let ty_int = self.b.type_int(32, 1);
-        let int_0 = self.b.constant_u32(ty_int, 0);
+    fn access_buffer_at(&mut self, id: VarId, ir: &Ir, idx: u32) -> u32 {
+        let addr = ir.backend.arrays[&id].device_address();
+        trace!("Accessing buffer at address: {addr}");
+        let int_ty = self.b.type_int(32, 1);
+        let int_0 = self.b.constant_u32(int_ty, 0);
 
-        let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
+        let ty_u64 = self.b.type_int(64, 0);
+        let addr = self.b.constant_u64(ty_u64, addr);
+
+        let (ptr_ty, ptr_st) = self.buffer_ref_ty[&id];
+
+        let ptr = self.b.convert_u_to_ptr(ptr_st, None, addr).unwrap();
         let ptr = self
             .b
-            .access_chain(ptr_ty, None, self.arrays[&id], vec![int_0, idx])
+            .access_chain(ptr_ty, None, ptr, vec![int_0, idx])
             .unwrap();
-        ptr
+        return ptr;
     }
 
-    fn access_binding(&mut self, id: VarId, ir: &Ir) -> u32 {
+    fn access_buffer(&mut self, id: VarId, ir: &Ir) -> u32 {
         let idx = self.idx.unwrap();
-        self.access_binding_at(id, ir, idx)
+        self.access_buffer_at(id, ir, idx)
     }
     fn set_num(&mut self, num: usize) {
         if let Some(num_) = self.num {
@@ -817,12 +825,37 @@ impl Kernel {
             };
         }
     }
+    fn record_buffer_references(&mut self, schedule: &[VarId], ir: &Ir) {
+        for id in ir.iter_se(schedule) {
+            if self.buffer_ref_ty.contains_key(&id) {
+                continue;
+            }
+
+            let var = ir.var(id);
+            match var.op {
+                Op::Binding => {
+                    let ty = var.ty().to_spirv(&mut self.b);
+                    let ptr_ty =
+                        self.b
+                            .type_pointer(None, spirv::StorageClass::PhysicalStorageBuffer, ty);
+                    let rta = self.b.type_runtime_array(ty);
+                    let st = self.b.type_struct(vec![rta]);
+                    let ptr_st =
+                        self.b
+                            .type_pointer(None, spirv::StorageClass::PhysicalStorageBuffer, st);
+
+                    self.buffer_ref_ty.insert(id, (ptr_ty, ptr_st));
+                }
+                _ => {}
+            }
+        }
+    }
     ///
     /// Records bindings before main function.
     ///
     fn record_bindings(&mut self, schedule: &[VarId], ir: &Ir, access: Access) {
         for id in ir.iter_se(schedule) {
-            let var = &ir.var(id);
+            let var = ir.var(id);
             match var.op {
                 Op::Binding => {
                     self.record_binding(id, ir, access);
@@ -1102,11 +1135,11 @@ impl Kernel {
 
                         self.record_if(condition_id, |s| {
                             // s.b.store(ptr, ret, None, None).unwrap();
-                            let ptr = s.access_binding_at(var.deps[0], ir, idx);
+                            let ptr = s.access_buffer_at(var.deps[0], ir, idx);
                             s.b.load(ty, Some(ret), ptr, None, None).unwrap();
                         });
                     } else {
-                        let ptr = self.access_binding_at(var.deps[0], ir, idx);
+                        let ptr = self.access_buffer_at(var.deps[0], ir, idx);
                         self.b.load(ty, Some(ret), ptr, None, None).unwrap();
                     }
                     ret
@@ -1122,7 +1155,7 @@ impl Kernel {
                 );
                 let ty = var.ty.to_spirv(&mut self.b);
                 let idx = self.record_ops(var.deps[1], ir);
-                let ptr = self.access_binding_at(var.side_effects[0], ir, idx);
+                let ptr = self.access_buffer_at(var.side_effects[0], ir, idx);
 
                 if var.deps.len() >= 4 {
                     let condition_id = self.record_ops(var.deps[3], ir);
@@ -1154,7 +1187,7 @@ impl Kernel {
             }
             Op::Binding => {
                 let ty = var.ty.to_spirv(&mut self.b);
-                let ptr = self.access_binding(id, ir);
+                let ptr = self.access_buffer(id, ir);
                 let ret = self.b.load(ty, None, ptr, None, None).unwrap();
                 ret
             }
@@ -1178,42 +1211,6 @@ impl Kernel {
             _ => unimplemented!(),
         };
         self.op_results.insert(id, ret);
-        // // Evaluate side effects like setattr
-        // for id in var.side_effects.iter() {
-        //     let se_spv = self.record_ops(*id, ir);
-        //     let se = &ir.var(*id);
-        //     match se.op {
-        //         Op::SetAttr(elem) => {
-        //             let ty = se.ty.to_spirv(&mut self.b);
-        //             let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
-        //             let int_ty = self.b.type_int(32, 1);
-        //             let idx = self.b.constant_u32(int_ty, elem as u32);
-        //
-        //             let src = self.record_ops(se.deps[0], ir);
-        //
-        //             let ptr = self.b.access_chain(ptr_ty, None, ret, vec![idx]).unwrap();
-        //             self.b.store(ptr, src, None, None).unwrap();
-        //         }
-        //         Op::Scatter => match ir.var(se.deps[0]).op {
-        //             Op::Binding => {
-        //                 let ty = se.ty.to_spirv(&mut self.b);
-        //                 let idx = self.record_ops(se.deps[1], ir);
-        //                 let ptr = self.access_binding_at(se.deps[0], ir, idx);
-        //
-        //                 if se.deps.len() >= 3 {
-        //                     let condition_id = self.record_ops(se.deps[2], ir);
-        //                     self.record_if(condition_id, |s| {
-        //                         s.b.store(ptr, ret, None, None).unwrap();
-        //                     });
-        //                 } else {
-        //                     self.b.store(ptr, ret, None, None).unwrap();
-        //                 }
-        //             }
-        //             _ => panic!("Cannot scatter into non buffer variable!"),
-        //         },
-        //         _ => {}
-        //     }
-        // }
         ret
     }
     ///
@@ -1248,6 +1245,10 @@ impl Kernel {
         self.b.capability(spirv::Capability::Int64);
         self.b
             .capability(spirv::Capability::PhysicalStorageBufferAddresses);
+        self.b.memory_model(
+            spirv::AddressingModel::PhysicalStorageBuffer64,
+            spirv::MemoryModel::GLSL450,
+        );
         self.b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Simple,
@@ -1319,6 +1320,9 @@ impl Kernel {
         // Record bindings for dependencies and side-effects TODO: scatter needs write!
         trace!("Recording Bindings for Source Variables...");
         self.record_bindings(&ir.schedule, ir, Access::Read);
+
+        trace!("Recording buffer references");
+        self.record_buffer_references(&ir.schedule, ir);
 
         // Setup main function
         trace!("Recording main function...");

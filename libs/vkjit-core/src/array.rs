@@ -51,4 +51,7 @@ impl Array {
     pub fn count(&self) -> usize {
         self.count
     }
+    pub fn device_address(&self) -> u64 {
+        Buffer::device_address(&self.buf)
+    }
 }

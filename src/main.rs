@@ -14,11 +14,11 @@ fn main() {
         let y = st.getattr(0);
         y
     };
-    println!("{}", repr_ir());
+    // println!("{}", repr_ir());
 
     eval!(y);
 
-    println!("{}", repr_ir());
-
+    // println!("{}", repr_ir());
+    //
     println!("{:?}", y);
 }
