@@ -531,32 +531,43 @@ impl Ir {
             )
             .unwrap(),
         );
+        trace!("{:?}", pipeline);
 
         // Collect nodes and corresponding bindings
         trace!("Collecting Nodes and Bindings...");
-        let mut nodes = k
-            .bindings
+        // let mut nodes = k
+        //     .bindings
+        //     .iter()
+        //     .map(|(id, binding)| {
+        //         let arr = self.array(*id).clone();
+        //         let node = graph.bind_node(&arr.buf);
+        //         (*binding, node)
+        //     })
+        //     .collect::<Vec<_>>();
+        // nodes.extend(dst.iter().map(|(binding, arr)| {
+        //     let node = graph.bind_node(&arr.buf);
+        //     (*binding, node)
+        // }));
+
+        let nodes = dst
             .iter()
-            .map(|(id, binding)| {
-                let arr = self.array(*id).clone();
+            .map(|(binding, arr)| {
                 let node = graph.bind_node(&arr.buf);
                 (*binding, node)
             })
             .collect::<Vec<_>>();
-        nodes.extend(dst.iter().map(|(binding, arr)| {
-            let node = graph.bind_node(&arr.buf);
-            (*binding, node)
-        }));
 
         let mut pass = graph.begin_pass("Eval kernel").bind_pipeline(&pipeline);
         for (binding, node) in nodes {
             match binding.access {
                 Access::Read => {
                     trace!("Binding buffer to {:?}", binding);
+                    // pass = pass.read_node(node);
                     pass = pass.read_descriptor((binding.set, binding.binding), node);
                 }
                 Access::Write => {
                     trace!("Binding buffer to {:?}", binding);
+                    // pass = pass.write_node(node);
                     pass = pass.write_descriptor((binding.set, binding.binding), node);
                 }
             }
@@ -1318,8 +1329,8 @@ impl Kernel {
             .collect::<Vec<_>>();
 
         // Record bindings for dependencies and side-effects TODO: scatter needs write!
-        trace!("Recording Bindings for Source Variables...");
-        self.record_bindings(&ir.schedule, ir, Access::Read);
+        // trace!("Recording Bindings for Source Variables...");
+        // self.record_bindings(&ir.schedule, ir, Access::Read);
 
         trace!("Recording buffer references");
         self.record_buffer_references(&ir.schedule, ir);
