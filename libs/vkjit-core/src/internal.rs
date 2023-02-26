@@ -549,29 +549,29 @@ impl Ir {
         //     (*binding, node)
         // }));
 
-        let nodes = dst
-            .iter()
-            .map(|(binding, arr)| {
-                let node = graph.bind_node(&arr.buf);
-                (*binding, node)
-            })
-            .collect::<Vec<_>>();
+        // let nodes = dst
+        //     .iter()
+        //     .map(|(binding, arr)| {
+        //         let node = graph.bind_node(&arr.buf);
+        //         (*binding, node)
+        //     })
+        //     .collect::<Vec<_>>();
 
         let mut pass = graph.begin_pass("Eval kernel").bind_pipeline(&pipeline);
-        for (binding, node) in nodes {
-            match binding.access {
-                Access::Read => {
-                    trace!("Binding buffer to {:?}", binding);
-                    // pass = pass.read_node(node);
-                    pass = pass.read_descriptor((binding.set, binding.binding), node);
-                }
-                Access::Write => {
-                    trace!("Binding buffer to {:?}", binding);
-                    // pass = pass.write_node(node);
-                    pass = pass.write_descriptor((binding.set, binding.binding), node);
-                }
-            }
-        }
+        // for (binding, node) in nodes {
+        //     match binding.access {
+        //         Access::Read => {
+        //             trace!("Binding buffer to {:?}", binding);
+        //             // pass = pass.read_node(node);
+        //             pass = pass.read_descriptor((binding.set, binding.binding), node);
+        //         }
+        //         Access::Write => {
+        //             trace!("Binding buffer to {:?}", binding);
+        //             // pass = pass.write_node(node);
+        //             pass = pass.write_descriptor((binding.set, binding.binding), node);
+        //         }
+        //     }
+        // }
         trace!(
             "Recording Compute Pass of size ({}, 1, 1)...",
             k.num.unwrap()
@@ -590,7 +590,7 @@ impl Ir {
 
         trace!("Overwriting Evaluated Variables...");
         // Overwrite variables
-        for (i, (_, arr)) in dst.into_iter().enumerate() {
+        for (i, arr) in dst.into_iter().enumerate() {
             let id = self.schedule[i];
             let var = self.var_mut(id);
             trace!("Overwriting variable {:?}", var);
@@ -775,12 +775,33 @@ impl Kernel {
         self.arrays.insert(id, st);
         st
     }
+    fn access_buffer_at_addr(&mut self, ir: &Ir, idx: u32, addr: u64, ref_ty: (u32, u32)) -> u32 {
+        trace!("Accessing buffer at address: {addr}");
+        let int_ty = self.b.type_int(32, 1);
+        let int_0 = self.b.constant_u32(int_ty, 0);
+
+        let ty_u64 = self.b.type_int(64, 0);
+        let addr = self.b.constant_u64(ty_u64, addr);
+
+        let (ptr_ty, ptr_st) = ref_ty;
+
+        let ptr = self.b.convert_u_to_ptr(ptr_st, None, addr).unwrap();
+        let ptr = self
+            .b
+            .access_chain(ptr_ty, None, ptr, vec![int_0, idx])
+            .unwrap();
+        return ptr;
+    }
+
     ///
     /// Return a pointer to the binding at an index
     /// Note that idx is a spirv variable
     ///
     fn access_buffer_at(&mut self, id: VarId, ir: &Ir, idx: u32) -> u32 {
         let addr = ir.backend.arrays[&id].device_address();
+        // let ref_ty = self.buffer_ref_ty[&id];
+        // self.access_buffer_at_addr(ir, idx, addr, ref_ty);
+
         trace!("Accessing buffer at address: {addr}");
         let int_ty = self.b.type_int(32, 1);
         let int_0 = self.b.constant_u32(int_ty, 0);
@@ -836,7 +857,20 @@ impl Kernel {
             };
         }
     }
-    fn record_buffer_references(&mut self, schedule: &[VarId], ir: &Ir) {
+    fn buffer_ptr_types(&mut self, ty: &VarType) -> (u32, u32) {
+        let ty = ty.to_spirv(&mut self.b);
+        let ptr_ty = self
+            .b
+            .type_pointer(None, spirv::StorageClass::PhysicalStorageBuffer, ty);
+        let rta = self.b.type_runtime_array(ty);
+        let st = self.b.type_struct(vec![rta]);
+        let ptr_st = self
+            .b
+            .type_pointer(None, spirv::StorageClass::PhysicalStorageBuffer, st);
+        (ptr_ty, ptr_st)
+    }
+
+    fn record_buffer_types(&mut self, schedule: &[VarId], ir: &Ir) {
         for id in ir.iter_se(schedule) {
             if self.buffer_ref_ty.contains_key(&id) {
                 continue;
@@ -845,17 +879,10 @@ impl Kernel {
             let var = ir.var(id);
             match var.op {
                 Op::Binding => {
-                    let ty = var.ty().to_spirv(&mut self.b);
-                    let ptr_ty =
-                        self.b
-                            .type_pointer(None, spirv::StorageClass::PhysicalStorageBuffer, ty);
-                    let rta = self.b.type_runtime_array(ty);
-                    let st = self.b.type_struct(vec![rta]);
-                    let ptr_st =
-                        self.b
-                            .type_pointer(None, spirv::StorageClass::PhysicalStorageBuffer, st);
+                    let ty = var.ty();
+                    let types = self.buffer_ptr_types(&ty);
 
-                    self.buffer_ref_ty.insert(id, (ptr_ty, ptr_st));
+                    self.buffer_ref_ty.insert(id, types);
                 }
                 _ => {}
             }
@@ -1244,7 +1271,7 @@ impl Kernel {
             };
         }
     }
-    pub fn compile(&mut self, ir: &Ir) -> Vec<(Binding, Array)> {
+    pub fn compile(&mut self, ir: &Ir) -> Vec<Array> {
         trace!("Compiling Kernel...");
         // Determine kernel size
         trace!("Determining Kernel size...");
@@ -1292,30 +1319,9 @@ impl Kernel {
             .iter()
             .enumerate()
             .map(|(i, id)| {
-                let ty = &ir.var(*id).ty.clone();
+                let ty = ir.var(*id).ty();
 
-                // Record dst bindings
-
-                let ty_struct_ptr = self.record_array_struct_ty(ty);
-
-                let binding = Binding {
-                    set: 1,
-                    binding: i as _,
-                    access: Access::Write,
-                };
-                let st = self
-                    .b
-                    .variable(ty_struct_ptr, None, spirv::StorageClass::Uniform, None);
-                self.b.decorate(
-                    st,
-                    spirv::Decoration::Binding,
-                    vec![rspirv::dr::Operand::LiteralInt32(binding.binding)],
-                );
-                self.b.decorate(
-                    st,
-                    spirv::Decoration::DescriptorSet,
-                    vec![rspirv::dr::Operand::LiteralInt32(binding.set)],
-                );
+                let ptr_types = self.buffer_ptr_types(&ty);
 
                 // Create dst arrays
                 let arr = Array::create(
@@ -1324,7 +1330,7 @@ impl Kernel {
                     self.num.expect("Could not determine size of kernel!"),
                     vk::BufferUsageFlags::STORAGE_BUFFER,
                 );
-                (arr, binding, st)
+                (arr, ptr_types)
             })
             .collect::<Vec<_>>();
 
@@ -1333,7 +1339,7 @@ impl Kernel {
         // self.record_bindings(&ir.schedule, ir, Access::Read);
 
         trace!("Recording buffer references");
-        self.record_buffer_references(&ir.schedule, ir);
+        self.record_buffer_types(&ir.schedule, ir);
 
         // Setup main function
         trace!("Recording main function...");
@@ -1386,18 +1392,11 @@ impl Kernel {
         let dst = dst
             .into_iter()
             .enumerate()
-            .map(|(i, (arr, binding, st))| {
-                let ty = arr.ty.to_spirv(&mut self.b);
-                let ty_int = self.b.type_int(32, 1);
-                let int_0 = self.b.constant_u32(ty_int, 0);
-
-                let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
-                let ptr = self
-                    .b
-                    .access_chain(ptr_ty, None, st, vec![int_0, self.idx.unwrap()])
-                    .unwrap();
+            .map(|(i, (arr, ref_ty))| {
+                let ptr =
+                    self.access_buffer_at_addr(ir, self.idx.unwrap(), arr.device_address(), ref_ty);
                 self.b.store(ptr, schedule_spv[i], None, None).unwrap();
-                (binding, arr)
+                arr
             })
             .collect::<Vec<_>>();
 
