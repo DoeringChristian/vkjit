@@ -54,7 +54,7 @@ pub fn gather_with(from: Var, idx: impl Into<Var>, condition: impl Into<Option<V
 
 #[macro_export]
 macro_rules! eval {
-    ($($var:expr)*) => {
+    ($($var:expr),*) => {
         let schedule = [$($var.id()),*];
         $crate::eval_internal(&schedule);
     };
@@ -68,32 +68,4 @@ pub fn eval_internal(schedule: &[VarId]) {
 #[cfg(test)]
 mod test {
     use crate::*;
-    #[test]
-    fn test_scatter() {
-        pretty_env_logger::init();
-
-        let x = Var::from(vec![1., 2., 3.]);
-        let mut y = Var::from(7.);
-        let idx = arange(VarType::U32, 3);
-
-        y.scatter(x.clone(), idx);
-
-        eval!(y);
-
-        assert_eq!(x.to_vec::<f32>(), vec![7., 7., 7.]);
-    }
-    #[test]
-    fn setattr() {
-        pretty_env_logger::init();
-
-        let x = Var::from(vec![1., 2., 3.]);
-
-        let mut st = zeros(VarType::Struct(vec![VarType::F32, VarType::F32]));
-
-        st.setattr(x.clone(), 0);
-
-        eval!(x);
-
-        todo!()
-    }
 }

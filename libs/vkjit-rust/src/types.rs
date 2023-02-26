@@ -206,3 +206,38 @@ named_bop!(Eq);
 named_bop!(Leq);
 named_bop!(Geq);
 named_bop!(Neq);
+
+#[cfg(test)]
+mod test {
+    use crate::*;
+    #[test]
+    fn setattr() {
+        let x = Var::from(vec![1., 2., 3.]);
+
+        let mut st = zeros(VarType::Struct(vec![VarType::F32, VarType::F32]));
+
+        st.setattr(x.clone(), 0);
+
+        let st_1 = st.getattr(0);
+        let st_2 = st.getattr(1);
+
+        eval!(st_1, st_2);
+
+        assert_eq!(st_1.to_vec::<f32>(), vec![1., 2., 3.]);
+        assert_eq!(st_2.to_vec::<f32>(), vec![0., 0., 0.]);
+    }
+    #[test]
+    fn test_scatter() {
+        pretty_env_logger::init();
+
+        let x = Var::from(vec![1., 2., 3.]);
+        let mut y = Var::from(7.);
+        let idx = arange(VarType::U32, 3);
+
+        y.scatter(x.clone(), idx);
+
+        eval!(y);
+
+        assert_eq!(x.to_vec::<f32>(), vec![7., 7., 7.]);
+    }
+}
