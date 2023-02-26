@@ -119,13 +119,13 @@ impl Var {
 #[derive(Debug)]
 pub struct Backend {
     device: Arc<screen_13::prelude::Device>,
-    pub(crate) arrays: HashMap<VarId, array::Array>,
 }
 
 pub struct Ir {
     pub(crate) backend: Backend,
     pub(crate) vars: Vec<Var>,
     schedule: Vec<VarId>,
+    pub(crate) arrays: HashMap<VarId, array::Array>,
 }
 
 impl Debug for Ir {
@@ -167,8 +167,8 @@ impl Ir {
         Self {
             backend: Backend {
                 device: device.clone(),
-                arrays: HashMap::default(),
             },
+            arrays: HashMap::default(),
             vars: Vec::default(),
             schedule: Vec::default(),
         }
@@ -182,16 +182,14 @@ impl Ir {
         //     .unwrap();
         // let device = sc13.device.clone();
         Self {
-            backend: Backend {
-                device,
-                arrays: HashMap::default(),
-            },
+            backend: Backend { device },
+            arrays: HashMap::default(),
             vars: Vec::default(),
             schedule: Vec::default(),
         }
     }
     pub fn array(&self, id: VarId) -> &array::Array {
-        &self.backend.arrays[&id]
+        &self.arrays[&id]
     }
     fn new_var(&mut self, op: Op, dependencies: Vec<VarId>, ty: VarType) -> VarId {
         self.push_var(Var {
@@ -328,7 +326,7 @@ impl Ir {
             side_effects: vec![],
             ref_count: 1,
         });
-        self.backend.arrays.insert(
+        self.arrays.insert(
             id,
             Array::from_slice(
                 &self.backend.device,
@@ -346,7 +344,7 @@ impl Ir {
             side_effects: vec![],
             ref_count: 1,
         });
-        self.backend.arrays.insert(
+        self.arrays.insert(
             id,
             Array::from_slice(
                 &self.backend.device,
@@ -364,7 +362,7 @@ impl Ir {
             side_effects: vec![],
             ref_count: 1,
         });
-        self.backend.arrays.insert(
+        self.arrays.insert(
             id,
             Array::from_slice(
                 &self.backend.device,
@@ -427,11 +425,11 @@ impl Ir {
         })
     }
     pub fn is_buffer(&self, id: &VarId) -> bool {
-        self.backend.arrays.contains_key(id)
+        self.arrays.contains_key(id)
     }
     pub fn str(&self, id: VarId) -> String {
         let var = &self.var(id);
-        let slice = screen_13::prelude::Buffer::mapped_slice(&self.backend.arrays[&id].buf);
+        let slice = screen_13::prelude::Buffer::mapped_slice(&self.arrays[&id].buf);
         match var.ty {
             VarType::F32 => {
                 format!("{:?}", cast_slice::<_, f32>(slice))
@@ -450,7 +448,7 @@ impl Ir {
     }
     pub fn print_buffer(&self, id: VarId) {
         let var = &self.var(id);
-        let slice = screen_13::prelude::Buffer::mapped_slice(&self.backend.arrays[&id].buf);
+        let slice = screen_13::prelude::Buffer::mapped_slice(&self.arrays[&id].buf);
         match var.ty {
             VarType::F32 => {
                 println!("{:?}", cast_slice::<_, f32>(slice))
@@ -469,7 +467,7 @@ impl Ir {
     }
     pub fn as_slice<T: bytemuck::Pod>(&self, id: VarId) -> &[T] {
         let var = &self.var(id);
-        let slice = screen_13::prelude::Buffer::mapped_slice(&self.backend.arrays[&id].buf);
+        let slice = screen_13::prelude::Buffer::mapped_slice(&self.arrays[&id].buf);
         assert!(var.ty.type_id() == TypeId::of::<T>());
         cast_slice(slice)
     }
@@ -483,7 +481,7 @@ impl Ir {
             var.ref_count -= 1;
 
             if var.ref_count == 0 {
-                ir.backend.arrays.remove(&id);
+                ir.arrays.remove(&id);
                 return true;
             }
             return false;
@@ -603,7 +601,7 @@ impl Ir {
                 ref_count,
             };
             trace!("with variable {:?}", var);
-            self.backend.arrays.insert(id, arr);
+            self.arrays.insert(id, arr);
         }
 
         // Clear schedule
@@ -647,6 +645,7 @@ pub struct Kernel {
     pub num: Option<usize>,
 
     pub buffer_ref_ty: HashMap<VarId, (u32, u32)>,
+    pub arrays: Vec<Arc<Array>>,
 
     // Variables used by many kernels
     pub idx: Option<u32>,
@@ -689,89 +688,14 @@ impl Kernel {
             b: rspirv::dr::Builder::new(),
             op_results: HashMap::default(),
             vars: HashMap::default(),
-            // bindings: HashMap::default(),
-            // arrays: HashMap::default(),
-            // array_structs: HashMap::default(),
             buffer_ref_ty: HashMap::default(),
+            arrays: vec![],
             num: None,
             idx: None,
             global_invocation_id: None,
         }
     }
-    // fn binding(&mut self, id: VarId, access: Access) -> Binding {
-    //     if !self.bindings.contains_key(&id) {
-    //         let binding = Binding {
-    //             set: 0,
-    //             binding: self.bindings.len() as u32,
-    //             access,
-    //         };
-    //         self.bindings.insert(id, binding);
-    //         binding
-    //     } else {
-    //         self.bindings[&id]
-    //     }
-    // }
-    // fn record_array_struct_ty(&mut self, ty: &VarType) -> u32 {
-    //     if self.array_structs.contains_key(ty) {
-    //         return self.array_structs[ty];
-    //     }
-    //     let spv_ty = ty.to_spirv(&mut self.b);
-    //
-    //     let ty_rta = self.b.type_runtime_array(spv_ty);
-    //     let ty_struct = self.b.type_struct(vec![ty_rta]);
-    //     let ty_struct_ptr = self
-    //         .b
-    //         .type_pointer(None, spirv::StorageClass::Uniform, ty_struct);
-    //
-    //     let stride = ty.stride();
-    //     self.b.decorate(
-    //         ty_rta,
-    //         spirv::Decoration::ArrayStride,
-    //         vec![rspirv::dr::Operand::LiteralInt32(stride as u32)],
-    //     );
-    //
-    //     self.b
-    //         .decorate(ty_struct, spirv::Decoration::BufferBlock, vec![]);
-    //     self.b.member_decorate(
-    //         ty_struct,
-    //         0,
-    //         spirv::Decoration::Offset,
-    //         vec![rspirv::dr::Operand::LiteralInt32(0)],
-    //     );
-    //     self.b.name(ty_struct, ty.name());
-    //
-    //     self.array_structs.insert(ty.clone(), ty_struct_ptr);
-    //     ty_struct_ptr
-    // }
-    // fn record_binding(&mut self, id: VarId, ir: &Ir, access: Access) -> u32 {
-    //     if self.arrays.contains_key(&id) {
-    //         return self.arrays[&id];
-    //     }
-    //
-    //     let var = &ir.var(id);
-    //
-    //     //self.set_num(var.array.as_ref().unwrap().count());
-    //     // https://shader-playground.timjones.io/3af32078f879d8599902e46b919dbfe3
-    //     let binding = self.binding(id, access);
-    //     let ty_struct_ptr = self.record_array_struct_ty(&var.ty);
-    //
-    //     let st = self
-    //         .b
-    //         .variable(ty_struct_ptr, None, spirv::StorageClass::Uniform, None);
-    //     self.b.decorate(
-    //         st,
-    //         spirv::Decoration::Binding,
-    //         vec![rspirv::dr::Operand::LiteralInt32(binding.binding)],
-    //     );
-    //     self.b.decorate(
-    //         st,
-    //         spirv::Decoration::DescriptorSet,
-    //         vec![rspirv::dr::Operand::LiteralInt32(binding.set)],
-    //     );
-    //     self.arrays.insert(id, st);
-    //     st
-    // }
-    fn access_buffer_at_addr(&mut self, ir: &Ir, idx: u32, addr: u64, ref_ty: (u32, u32)) -> u32 {
+    fn access_buffer_at_addr(&mut self, idx: u32, addr: u64, ref_ty: (u32, u32)) -> u32 {
         trace!("Accessing buffer at address: {addr}");
         let int_ty = self.b.type_int(32, 1);
         let int_0 = self.b.constant_u32(int_ty, 0);
@@ -794,9 +718,9 @@ impl Kernel {
     /// Note that idx is a spirv variable
     ///
     fn access_buffer_at(&mut self, id: VarId, ir: &Ir, idx: u32) -> u32 {
-        let addr = ir.backend.arrays[&id].device_address();
+        let addr = ir.arrays[&id].device_address();
         let ref_ty = self.buffer_ref_ty[&id];
-        let ptr = self.access_buffer_at_addr(ir, idx, addr, ref_ty);
+        let ptr = self.access_buffer_at_addr(idx, addr, ref_ty);
         return ptr;
     }
 
@@ -824,11 +748,8 @@ impl Kernel {
             let var = &ir.var(id);
             match var.op {
                 Op::Binding => {
-                    trace!(
-                        "\t\tFount Binding of size {}",
-                        ir.backend.arrays[&id].count()
-                    );
-                    self.set_num(ir.backend.arrays[&id].count());
+                    trace!("\t\tFount Binding of size {}", ir.arrays[&id].count());
+                    self.set_num(ir.arrays[&id].count());
                 }
                 Op::Arange(num) => {
                     trace!("\t\tFount Arange of num {}", num);
@@ -1361,7 +1282,7 @@ impl Kernel {
             .enumerate()
             .map(|(i, (arr, ref_ty))| {
                 let ptr =
-                    self.access_buffer_at_addr(ir, self.idx.unwrap(), arr.device_address(), ref_ty);
+                    self.access_buffer_at_addr(self.idx.unwrap(), arr.device_address(), ref_ty);
                 self.b.store(ptr, schedule_spv[i], None, None).unwrap();
                 arr
             })
