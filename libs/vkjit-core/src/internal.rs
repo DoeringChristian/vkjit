@@ -174,13 +174,13 @@ impl Ir {
         }
     }
     pub fn new() -> Self {
-        // let cfg = screen_13::prelude::DriverConfig::new().build();
-        // let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
-        let sc13 = screen_13::prelude::EventLoop::new()
-            .debug(true)
-            .build()
-            .unwrap();
-        let device = sc13.device.clone();
+        let cfg = screen_13::prelude::DriverConfig::new().build();
+        let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
+        // let sc13 = screen_13::prelude::EventLoop::new()
+        //     .debug(true)
+        //     .build()
+        //     .unwrap();
+        // let device = sc13.device.clone();
         Self {
             backend: Backend {
                 device,
