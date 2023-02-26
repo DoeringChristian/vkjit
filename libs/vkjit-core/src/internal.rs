@@ -871,6 +871,26 @@ impl Kernel {
         self.b.branch(end_label_id).unwrap();
         self.b.begin_block(Some(end_label_id)).unwrap();
     }
+    fn record_const(&mut self, c: &Const, ty: &VarType) -> u32 {
+        let ty = ty.to_spirv(&mut self.b);
+        let ret = match c {
+            Const::Bool(c) => {
+                if *c {
+                    self.b.constant_true(ty)
+                } else {
+                    self.b.constant_false(ty)
+                }
+            }
+            Const::UInt32(c) => self.b.constant_u32(ty, *c),
+            Const::Int32(c) => self
+                .b
+                .constant_u32(ty, unsafe { *(c as *const i32 as *const u32) }),
+            Const::Float32(c) => self.b.constant_f32(ty, *c),
+            _ => unimplemented!(),
+        };
+        // self.op_results.insert(id, ret);
+        ret
+    }
     ///
     /// Main record loop for recording variable operations.
     ///
@@ -881,22 +901,8 @@ impl Kernel {
         let var = &ir.var(id);
         let ret = match var.op {
             Op::Const(c) => {
-                let ty = var.ty.to_spirv(&mut self.b);
-                let ret = match c {
-                    Const::Bool(c) => {
-                        if c {
-                            self.b.constant_true(ty)
-                        } else {
-                            self.b.constant_false(ty)
-                        }
-                    }
-                    Const::UInt32(c) => self.b.constant_u32(ty, c),
-                    Const::Int32(c) => self
-                        .b
-                        .constant_u32(ty, unsafe { *(&c as *const i32 as *const u32) }),
-                    Const::Float32(c) => self.b.constant_f32(ty, c),
-                    _ => unimplemented!(),
-                };
+                // let ty = var.ty.to_spirv(&mut self.b);
+                let ret = self.record_const(&c, &var.ty);
                 self.op_results.insert(id, ret);
                 ret
             }
