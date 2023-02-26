@@ -49,42 +49,62 @@ impl Backend for VulkanBackend {
         buf
     }
 
-    fn execute(&self, kernel: &Kernel, arrays: &[(Binding, Self::Array)]) {
+    fn execute(&self, kernel: Kernel) {
         trace!("Recording Render Graph...");
         let mut graph = RenderGraph::new();
         let mut pool = LazyPool::new(&self.device);
 
+        let num = kernel.num.unwrap();
         let spv = kernel.assemble();
         let pipeline = Arc::new(
             ComputePipeline::create(
-                &self.device,
+                &self.device(),
                 screen_13::prelude::ComputePipelineInfo::default(),
                 screen_13::prelude::Shader::new_compute(spv),
             )
             .unwrap(),
         );
+        trace!("{:?}", pipeline);
 
         // Collect nodes and corresponding bindings
         trace!("Collecting Nodes and Bindings...");
-        let nodes = arrays
-            .iter()
-            .map(|(binding, arr)| (*binding, graph.bind_node(arr)))
-            .collect::<Vec<_>>();
+        // let mut nodes = k
+        //     .bindings
+        //     .iter()
+        //     .map(|(id, binding)| {
+        //         let arr = self.array(*id).clone();
+        //         let node = graph.bind_node(&arr.buf);
+        //         (*binding, node)
+        //     })
+        //     .collect::<Vec<_>>();
+        // nodes.extend(dst.iter().map(|(binding, arr)| {
+        //     let node = graph.bind_node(&arr.buf);
+        //     (*binding, node)
+        // }));
+
+        // let nodes = dst
+        //     .iter()
+        //     .map(|(binding, arr)| {
+        //         let node = graph.bind_node(&arr.buf);
+        //         (*binding, node)
+        //     })
+        //     .collect::<Vec<_>>();
 
         let mut pass = graph.begin_pass("Eval kernel").bind_pipeline(&pipeline);
-        for (binding, node) in nodes {
-            match binding.access {
-                Access::Read => {
-                    trace!("Binding buffer to {:?}", binding);
-                    pass = pass.read_descriptor((binding.set, binding.binding), node);
-                }
-                Access::Write => {
-                    trace!("Binding buffer to {:?}", binding);
-                    pass = pass.write_descriptor((binding.set, binding.binding), node);
-                }
-            }
-        }
-        let num = kernel.num();
+        // for (binding, node) in nodes {
+        //     match binding.access {
+        //         Access::Read => {
+        //             trace!("Binding buffer to {:?}", binding);
+        //             // pass = pass.read_node(node);
+        //             pass = pass.read_descriptor((binding.set, binding.binding), node);
+        //         }
+        //         Access::Write => {
+        //             trace!("Binding buffer to {:?}", binding);
+        //             // pass = pass.write_node(node);
+        //             pass = pass.write_descriptor((binding.set, binding.binding), node);
+        //         }
+        //     }
+        // }
         trace!("Recording Compute Pass of size ({}, 1, 1)...", num);
         pass.record_compute(move |compute, _| {
             compute.dispatch(num as u32, 1, 1);
@@ -95,7 +115,7 @@ impl Backend for VulkanBackend {
         graph.resolve().submit(&mut pool, 0).unwrap();
 
         trace!("Executing Computations...");
-        unsafe { self.device.device_wait_idle().unwrap() };
+        unsafe { self.device().device_wait_idle().unwrap() };
     }
 
     fn create_array(&self, size: usize) -> Self::Array {
