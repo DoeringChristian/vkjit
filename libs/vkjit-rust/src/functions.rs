@@ -30,16 +30,27 @@ pub fn select(condition: impl Into<Var>, x: impl Into<Var>, y: impl Into<Var>) -
     drop(y);
     ret
 }
-pub fn gather_with(from: Var, idx: impl Into<Var>, condition: impl Into<Option<Var>>) -> Var {
-    let idx = idx.into();
-
-    todo!()
-}
 pub fn gather(from: Var, idx: impl Into<Var>) -> Var {
     let idx = idx.into();
-    let ret = Var::from(IR.lock().unwrap().gather(from.id(), idx.id()));
+    let ret = Var::from(IR.lock().unwrap().gather(from.id(), idx.id(), None));
     drop(idx);
     drop(from);
+    ret
+}
+pub fn gather_with(from: Var, idx: impl Into<Var>, condition: impl Into<Option<Var>>) -> Var {
+    let idx = idx.into();
+    let condition = condition.into();
+    let cond = condition.as_ref().map(|condition| condition.id());
+
+    log::trace!(
+        "Gather from {:?} at {:?} with {:?}",
+        from.id(),
+        idx.id(),
+        condition,
+    );
+
+    let mut ir = IR.lock().unwrap();
+    let ret = Var::from(ir.gather(from.id(), idx.id(), cond));
     ret
 }
 

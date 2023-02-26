@@ -4,18 +4,14 @@ use vkjit_rust::*;
 fn main() {
     pretty_env_logger::init();
 
-    let x = {
-        let x = Var::from(vec![1, 2, 3]);
-        let y = gather(
-            x.clone(),
-            Var::from(2) - arange(vkjit_core::VarType::U32, 3),
-        );
-        // let y = Var::from(1);
+    let x = Var::from(vec![1, 2, 3]);
+    let i = arange(vkjit_core::VarType::U32, 3);
+    // dbg!(i.id());
+    let const2 = Var::from(2);
+    let cond = i.clone().lt(const2);
+    dbg!(cond.id());
 
-        let s = Var::from(&[x.clone().leq(2).then_else(x, 6), y][..]);
-
-        s.getattr(1)
-    };
+    let x = gather_with(x, i.clone(), cond);
 
     println!("{:#?}", IR.lock().unwrap());
 

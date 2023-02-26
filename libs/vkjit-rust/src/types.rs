@@ -1,11 +1,12 @@
+use log::{error, trace, warn};
 use std::fmt::Debug;
-use std::ops::{self, Index};
+use std::ops;
 
 use paste::paste;
 use vkjit_core::vartype::VarType;
 use vkjit_core::VarId;
 
-use crate::{select, IR};
+use crate::IR;
 
 macro_rules! from_const {
     ($ty:ident) => {
@@ -46,17 +47,24 @@ macro_rules! bop {
 
                 fn [<$bop:lower>](self, rhs: T) -> Self::Output {
                     let rhs = rhs.into();
-                    let ret = Self(IR.lock().unwrap().[<$bop:lower>](self.0, rhs.0));
-                    drop(rhs);
-                    ret
+
+                    let mut ir = IR.lock().unwrap();
+                    Self(ir.[<$bop:lower>](self.0, rhs.0))
                 }
             }
 
             impl<T: Into<Var>> ops::[<$bop Assign>]<T> for Var{
                 fn [<$bop:lower _assign>](&mut self, rhs: T) {
                     let rhs = rhs.into();
-                    let ret = Self(IR.lock().unwrap().[<$bop:lower>](self.0, rhs.0));
-                    drop(rhs);
+
+                    let ret = {
+                        // MutexGuard to IR needs to be droped before asignment to self,
+                        // which results in call to drop for self and locking of another
+                        // Guard.
+                        let mut ir = IR.lock().unwrap();
+                        Self(ir.[<$bop:lower>](self.0, rhs.0))
+                    };
+
                     *self = ret;
                 }
             }
@@ -70,9 +78,9 @@ macro_rules! named_bop {
             impl Var {
                 pub fn [<$bop:lower>](&self, rhs: impl Into<Var>) -> Self{
                     let rhs = rhs.into();
-                    let ret = Self(IR.lock().unwrap().[<$bop:lower>](self.0, rhs.0));
-                    drop(rhs);
-                    ret
+                    let mut ir = IR.lock().unwrap();
+
+                    Self(ir.[<$bop:lower>](self.0, rhs.0))
                 }
             }
         }
@@ -126,6 +134,7 @@ impl Clone for Var {
 
 impl Drop for Var {
     fn drop(&mut self) {
+        trace!("Dropping {:?}", self.id());
         IR.lock().unwrap().dec_ref_count(self.0);
     }
 }

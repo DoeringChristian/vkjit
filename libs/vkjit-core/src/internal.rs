@@ -387,9 +387,16 @@ impl Ir {
         dst.side_effects.push(var);
         self.inc_ref_count(var); // Need to increment ref count
     }
-    pub fn gather(&mut self, src_id: VarId, idx_id: VarId) -> VarId {
+    pub fn gather(&mut self, src_id: VarId, idx_id: VarId, active_id: Option<VarId>) -> VarId {
         let src = &self.var(src_id);
-        self.new_var(Op::Gather, vec![src_id, idx_id], src.ty.clone())
+        let mut deps = vec![src_id, idx_id];
+
+        active_id.and_then(|id| {
+            deps.push(id);
+            Some(())
+        });
+
+        self.new_var(Op::Gather, deps, src.ty.clone())
     }
     pub fn scatter(
         &mut self,
@@ -1030,8 +1037,22 @@ impl Kernel {
                 Op::Binding => {
                     let ty = var.ty.to_spirv(&mut self.b);
                     let idx = self.record_ops(var.deps[1], ir);
-                    let ptr = self.access_binding_at(var.deps[0], ir, idx);
-                    self.b.load(ty, None, ptr, None, None).unwrap()
+
+                    let ret = self.b.id();
+
+                    if var.deps.len() >= 3 {
+                        let condition_id = self.record_ops(var.deps[2], ir);
+
+                        self.record_if(condition_id, |s| {
+                            // s.b.store(ptr, ret, None, None).unwrap();
+                            let ptr = s.access_binding_at(var.deps[0], ir, idx);
+                            s.b.load(ty, Some(ret), ptr, None, None).unwrap();
+                        });
+                    } else {
+                        let ptr = self.access_binding_at(var.deps[0], ir, idx);
+                        self.b.load(ty, Some(ret), ptr, None, None).unwrap();
+                    }
+                    ret
                 }
                 _ => panic!("Can only gather from buffer!"),
             },
