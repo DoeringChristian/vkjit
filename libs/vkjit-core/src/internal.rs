@@ -489,11 +489,20 @@ impl Ir {
         let mut var = self.var_mut(id);
         var.ref_count += 1;
     }
+    pub fn clear_schedule(&mut self) {
+        for id in self.schedule {
+            self.dec_ref_count(id);
+        }
+        self.schedule.clear();
+    }
     pub fn schedule(&mut self, schedule: &[VarId]) {
+        for id in schedule {
+            self.inc_ref_count(id);
+        }
         self.schedule.extend_from_slice(schedule);
     }
     pub fn eval(&mut self, schedule: &[VarId]) {
-        self.schedule.extend_from_slice(schedule);
+        self.schedule(schedule);
         #[cfg(test)]
         trace!("Compiling Kernel...");
         trace!("Internal Representation: {:#?}", self);
@@ -584,7 +593,7 @@ impl Ir {
         }
 
         // Clear schedule
-        self.schedule.clear();
+        self.clear_schedule();
     }
 
     pub fn iter_dep(&self, root: &[VarId]) -> DepIterator {
