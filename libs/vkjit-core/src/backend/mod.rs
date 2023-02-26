@@ -21,5 +21,5 @@ pub trait Backend {
     fn create_array_from_slice(&self, data: &[u8]) -> Self::Array;
     fn create_array(&self, size: usize) -> Self::Array;
 
-    fn execute(&self, kernel: Kernel);
+    fn execute(&self, kernel: Kernel, dst: &[Self::Array]);
 }

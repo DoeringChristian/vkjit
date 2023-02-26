@@ -495,82 +495,7 @@ impl Ir {
         let mut k = Kernel::new();
         let dst = k.compile(self);
 
-        self.backend.execute(k);
-
-        // // Record render graph
-        // trace!("Recording Render Graph...");
-        // let mut graph = RenderGraph::new();
-        // let mut pool = LazyPool::new(&self.backend.device());
-        //
-        // let module = k.b.module();
-        // // #[cfg(test)]
-        // trace!("{}", module.disassemble());
-        //
-        // let spv = module.assemble();
-        // let pipeline = Arc::new(
-        //     ComputePipeline::create(
-        //         &self.backend.device(),
-        //         screen_13::prelude::ComputePipelineInfo::default(),
-        //         screen_13::prelude::Shader::new_compute(spv),
-        //     )
-        //     .unwrap(),
-        // );
-        // trace!("{:?}", pipeline);
-        //
-        // // Collect nodes and corresponding bindings
-        // trace!("Collecting Nodes and Bindings...");
-        // // let mut nodes = k
-        // //     .bindings
-        // //     .iter()
-        // //     .map(|(id, binding)| {
-        // //         let arr = self.array(*id).clone();
-        // //         let node = graph.bind_node(&arr.buf);
-        // //         (*binding, node)
-        // //     })
-        // //     .collect::<Vec<_>>();
-        // // nodes.extend(dst.iter().map(|(binding, arr)| {
-        // //     let node = graph.bind_node(&arr.buf);
-        // //     (*binding, node)
-        // // }));
-        //
-        // // let nodes = dst
-        // //     .iter()
-        // //     .map(|(binding, arr)| {
-        // //         let node = graph.bind_node(&arr.buf);
-        // //         (*binding, node)
-        // //     })
-        // //     .collect::<Vec<_>>();
-        //
-        // let mut pass = graph.begin_pass("Eval kernel").bind_pipeline(&pipeline);
-        // // for (binding, node) in nodes {
-        // //     match binding.access {
-        // //         Access::Read => {
-        // //             trace!("Binding buffer to {:?}", binding);
-        // //             // pass = pass.read_node(node);
-        // //             pass = pass.read_descriptor((binding.set, binding.binding), node);
-        // //         }
-        // //         Access::Write => {
-        // //             trace!("Binding buffer to {:?}", binding);
-        // //             // pass = pass.write_node(node);
-        // //             pass = pass.write_descriptor((binding.set, binding.binding), node);
-        // //         }
-        // //     }
-        // // }
-        // trace!(
-        //     "Recording Compute Pass of size ({}, 1, 1)...",
-        //     k.num.unwrap()
-        // );
-        // let num = k.num.unwrap();
-        // pass.record_compute(move |compute, _| {
-        //     compute.dispatch(num as u32, 1, 1);
-        // })
-        // .submit_pass();
-        //
-        // trace!("Resolving Graph...");
-        // graph.resolve().submit(&mut pool, 0).unwrap();
-        //
-        // trace!("Executing Computations...");
-        // unsafe { self.backend.device().device_wait_idle().unwrap() };
+        self.backend.execute(k, &dst);
 
         trace!("Overwriting Evaluated Variables...");
         // Overwrite variables
@@ -1284,8 +1209,8 @@ impl Kernel {
     }
     pub fn assemble(self) -> Vec<u32> {
         let module = self.b.module();
-        trace!("{}", module.disassemble());
-        module.assemble()
+        // trace!("{}", module.disassemble());
+        module.assemble().clone()
     }
     pub fn num(&self) -> usize {
         self.num.unwrap()

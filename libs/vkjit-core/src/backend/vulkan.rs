@@ -49,12 +49,14 @@ impl Backend for VulkanBackend {
         buf
     }
 
-    fn execute(&self, kernel: Kernel) {
+    fn execute(&self, kernel: Kernel, dst: &[Self::Array]) {
         trace!("Recording Render Graph...");
         let mut graph = RenderGraph::new();
         let mut pool = LazyPool::new(&self.device);
 
         let num = kernel.num.unwrap();
+        let arrays = kernel.arrays.clone();
+
         let spv = kernel.assemble();
         let pipeline = Arc::new(
             ComputePipeline::create(
@@ -68,43 +70,19 @@ impl Backend for VulkanBackend {
 
         // Collect nodes and corresponding bindings
         trace!("Collecting Nodes and Bindings...");
-        // let mut nodes = k
-        //     .bindings
-        //     .iter()
-        //     .map(|(id, binding)| {
-        //         let arr = self.array(*id).clone();
-        //         let node = graph.bind_node(&arr.buf);
-        //         (*binding, node)
-        //     })
-        //     .collect::<Vec<_>>();
-        // nodes.extend(dst.iter().map(|(binding, arr)| {
-        //     let node = graph.bind_node(&arr.buf);
-        //     (*binding, node)
-        // }));
 
-        // let nodes = dst
-        //     .iter()
-        //     .map(|(binding, arr)| {
-        //         let node = graph.bind_node(&arr.buf);
-        //         (*binding, node)
-        //     })
-        //     .collect::<Vec<_>>();
+        let nodes = arrays
+            .iter()
+            .chain(dst)
+            .map(|arr| graph.bind_node(arr))
+            .collect::<Vec<_>>();
 
         let mut pass = graph.begin_pass("Eval kernel").bind_pipeline(&pipeline);
-        // for (binding, node) in nodes {
-        //     match binding.access {
-        //         Access::Read => {
-        //             trace!("Binding buffer to {:?}", binding);
-        //             // pass = pass.read_node(node);
-        //             pass = pass.read_descriptor((binding.set, binding.binding), node);
-        //         }
-        //         Access::Write => {
-        //             trace!("Binding buffer to {:?}", binding);
-        //             // pass = pass.write_node(node);
-        //             pass = pass.write_descriptor((binding.set, binding.binding), node);
-        //         }
-        //     }
-        // }
+
+        for node in nodes {
+            pass = pass.write_node(node);
+        }
+
         trace!("Recording Compute Pass of size ({}, 1, 1)...", num);
         pass.record_compute(move |compute, _| {
             compute.dispatch(num as u32, 1, 1);
