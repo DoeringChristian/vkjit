@@ -1377,4 +1377,12 @@ impl Kernel {
 
         dst
     }
+    pub fn assemble(&self) -> Vec<u32> {
+        let module = self.b.module_ref();
+        trace!("{}", module.disassemble());
+        module.assemble()
+    }
+    pub fn num(&self) -> usize {
+        self.num.unwrap()
+    }
 }

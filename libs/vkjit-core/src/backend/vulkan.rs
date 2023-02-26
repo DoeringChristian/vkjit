@@ -3,6 +3,7 @@ use crevice::std140::{self, AsStd140};
 use screen_13::prelude::*;
 use std::sync::Arc;
 
+use crate::internal::{Access, Binding, Kernel};
 use crate::VarType;
 
 use super::*;
@@ -43,4 +44,53 @@ impl Backend for VulkanBackend {
         let slice = Buffer::mapped_slice(&array);
         cast_slice(slice)
     }
+    fn execute(&self, kernel: &Kernel, arrays: &[(Binding, Self::Array)]) {
+        trace!("Recording Render Graph...");
+        let mut graph = RenderGraph::new();
+        let mut pool = LazyPool::new(&self.device);
+
+        let spv = kernel.assemble();
+        let pipeline = Arc::new(
+            ComputePipeline::create(
+                &self.device,
+                screen_13::prelude::ComputePipelineInfo::default(),
+                screen_13::prelude::Shader::new_compute(spv),
+            )
+            .unwrap(),
+        );
+
+        // Collect nodes and corresponding bindings
+        trace!("Collecting Nodes and Bindings...");
+        let nodes = arrays
+            .iter()
+            .map(|(binding, arr)| (*binding, graph.bind_node(arr)))
+            .collect::<Vec<_>>();
+
+        let mut pass = graph.begin_pass("Eval kernel").bind_pipeline(&pipeline);
+        for (binding, node) in nodes {
+            match binding.access {
+                Access::Read => {
+                    trace!("Binding buffer to {:?}", binding);
+                    pass = pass.read_descriptor((binding.set, binding.binding), node);
+                }
+                Access::Write => {
+                    trace!("Binding buffer to {:?}", binding);
+                    pass = pass.write_descriptor((binding.set, binding.binding), node);
+                }
+            }
+        }
+        let num = kernel.num();
+        trace!("Recording Compute Pass of size ({}, 1, 1)...", num);
+        pass.record_compute(move |compute, _| {
+            compute.dispatch(num as u32, 1, 1);
+        })
+        .submit_pass();
+
+        trace!("Resolving Graph...");
+        graph.resolve().submit(&mut pool, 0).unwrap();
+
+        trace!("Executing Computations...");
+        unsafe { self.device.device_wait_idle().unwrap() };
+    }
 }
+impl VulkanBackend {}
