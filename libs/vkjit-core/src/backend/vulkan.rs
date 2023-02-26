@@ -34,8 +34,14 @@ impl Backend for VulkanBackend {
     }
 
     fn create() -> Self {
-        let cfg = screen_13::prelude::DriverConfig::new().build();
-        let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
+        // let cfg = screen_13::prelude::DriverConfig::new().build();
+        // let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
+
+        let sc13 = screen_13::prelude::EventLoop::new()
+            .debug(true)
+            .build()
+            .unwrap();
+        let device = sc13.device.clone();
         Self { device }
     }
 
@@ -43,8 +49,12 @@ impl Backend for VulkanBackend {
         let count = data.len();
         let size = count;
         let buf = Arc::new(
-            Buffer::create_from_slice(&self.device, vk::BufferUsageFlags::STORAGE_BUFFER, data)
-                .unwrap(),
+            Buffer::create_from_slice(
+                &self.device,
+                vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+                data,
+            )
+            .unwrap(),
         );
         buf
     }
@@ -100,7 +110,11 @@ impl Backend for VulkanBackend {
         Arc::new(
             Buffer::create(
                 &self.device,
-                BufferInfo::new_mappable(size as u64, vk::BufferUsageFlags::STORAGE_BUFFER),
+                BufferInfo::new_mappable(
+                    size as u64,
+                    vk::BufferUsageFlags::STORAGE_BUFFER
+                        | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+                ),
             )
             .unwrap(),
         )

@@ -700,6 +700,24 @@ impl Kernel {
             }
         }
     }
+    fn record_addr_var(&mut self, schedule: &[VarId], ir: &Ir) {
+        for id in ir.iter_se(schedule) {
+            if self.buffer_ref_ty.contains_key(&id) {
+                continue;
+            }
+
+            let var = ir.var(id);
+            match var.op {
+                Op::Binding => {
+                    // let ty = var.ty();
+                    // let types = self.buffer_ptr_types(&ty);
+                    //
+                    // self.buffer_ref_ty.insert(id, types);
+                }
+                _ => {}
+            }
+        }
+    }
     fn record_if<F>(&mut self, conditional_id: u32, mut f: F)
     where
         F: FnMut(&mut Self),
@@ -1076,7 +1094,8 @@ impl Kernel {
         self.record_kernel_size(&ir.schedule, ir);
 
         trace!("Kernel Configuration");
-        self.b.set_version(1, 3);
+        self.b.set_version(1, 5);
+        self.b.extension("SPV_KHR_physical_storage_buffer");
         self.b.capability(spirv::Capability::Shader);
         self.b.capability(spirv::Capability::Int64);
         self.b
@@ -1209,7 +1228,7 @@ impl Kernel {
     }
     pub fn assemble(self) -> Vec<u32> {
         let module = self.b.module();
-        // trace!("{}", module.disassemble());
+        trace!("{}", module.disassemble());
         module.assemble().clone()
     }
     pub fn num(&self) -> usize {
