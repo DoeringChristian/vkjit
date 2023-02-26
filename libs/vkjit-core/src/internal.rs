@@ -655,6 +655,25 @@ impl Debug for Kernel {
     }
 }
 
+//
+// Sample code for using GLSL, bufferreference2
+// Shader playground: https://shader-playground.timjones.io/421ec46893e143d7947b5cad3eb945a7
+// ```glsl
+// #version 460
+// #extension GL_EXT_buffer_reference2 : require
+// #extension GL_EXT_scalar_block_layout : enable
+// #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+//
+// layout(buffer_reference, scalar) buffer bufferReference {int b[]; };
+//
+// void main()
+// {
+//     uint64_t addr = 0;
+// 	int b = bufferReference(addr).b[0];
+// }
+//
+// ```
+//
 impl Kernel {
     pub fn new() -> Self {
         Self {
@@ -1226,6 +1245,9 @@ impl Kernel {
         trace!("Kernel Configuration");
         self.b.set_version(1, 3);
         self.b.capability(spirv::Capability::Shader);
+        self.b.capability(spirv::Capability::Int64);
+        self.b
+            .capability(spirv::Capability::PhysicalStorageBufferAddresses);
         self.b.memory_model(
             rspirv::spirv::AddressingModel::Logical,
             rspirv::spirv::MemoryModel::Simple,
