@@ -606,13 +606,16 @@ impl Kernel {
             global_invocation_id: None,
         }
     }
-    fn access_buffer_at_addr(&mut self, idx: u32, addr: u64, ref_ty: (u32, u32)) -> u32 {
+    fn access_buffer_at_addr(&mut self, idx: u32, addr: u64, ref_ty: (u32, u32), var: u32) -> u32 {
         trace!("Accessing buffer at address: {addr}");
         let int_ty = self.b.type_int(32, 1);
         let int_0 = self.b.constant_u32(int_ty, 0);
 
         let ty_u64 = self.b.type_int(64, 0);
-        let addr = self.b.constant_u64(ty_u64, addr);
+        let addr_const = self.b.constant_u64(ty_u64, addr);
+        // let addr_ty = self.b.type_pointer(None, spirv::StorageClass::Function, ty_u64);
+        self.b.store(var, addr_const, None, None);
+        let addr = self.b.load(ty_u64, None, var, None, None).unwrap();
 
         let (ptr_ty, ptr_st) = ref_ty;
 
@@ -631,7 +634,7 @@ impl Kernel {
     fn access_buffer_at(&mut self, id: VarId, ir: &Ir, idx: u32) -> u32 {
         let addr = ir.arrays[&id].device_address();
         let ref_ty = self.buffer_ref_ty[&id];
-        let ptr = self.access_buffer_at_addr(idx, addr, ref_ty);
+        let ptr = self.access_buffer_at_addr(idx, addr, ref_ty, self.vars[&id]);
         return ptr;
     }
 
@@ -670,11 +673,18 @@ impl Kernel {
         }
     }
     fn buffer_ptr_types(&mut self, ty: &VarType) -> (u32, u32) {
-        let ty = ty.to_spirv(&mut self.b);
+        let spv_ty = ty.to_spirv(&mut self.b);
         let ptr_ty = self
             .b
-            .type_pointer(None, spirv::StorageClass::PhysicalStorageBuffer, ty);
-        let rta = self.b.type_runtime_array(ty);
+            .type_pointer(None, spirv::StorageClass::PhysicalStorageBuffer, spv_ty);
+        let rta = self.b.type_runtime_array(spv_ty);
+
+        self.b.decorate(
+            rta,
+            spirv::Decoration::ArrayStride,
+            vec![rspirv::dr::Operand::LiteralInt32(ty.stride() as u32)],
+        );
+
         let st = self.b.type_struct(vec![rta]);
         let ptr_st = self
             .b
@@ -1071,7 +1081,7 @@ impl Kernel {
     /// Record variables needed to store structs and variables for select.
     ///
     pub fn record_spv_vars(&mut self, schedule: &[VarId], ir: &Ir) {
-        for id in ir.iter_dep(schedule) {
+        for id in ir.iter_se(schedule) {
             let var = &ir.var(id);
             let ty = var.ty.to_spirv(&mut self.b);
             let ty_ptr = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
@@ -1081,6 +1091,16 @@ impl Kernel {
                     let var = self
                         .b
                         .variable(ty_ptr, None, spirv::StorageClass::Function, None);
+                    self.vars.insert(id, var);
+                }
+                Op::Binding => {
+                    let uint64 = self.b.type_int(64, 0);
+                    let ptr = self
+                        .b
+                        .type_pointer(None, spirv::StorageClass::Function, uint64);
+                    let var = self
+                        .b
+                        .variable(ptr, None, spirv::StorageClass::Function, None);
                     self.vars.insert(id, var);
                 }
                 _ => {}
@@ -1104,10 +1124,10 @@ impl Kernel {
             spirv::AddressingModel::PhysicalStorageBuffer64,
             spirv::MemoryModel::GLSL450,
         );
-        self.b.memory_model(
-            rspirv::spirv::AddressingModel::Logical,
-            rspirv::spirv::MemoryModel::Simple,
-        );
+        // self.b.memory_model(
+        //     rspirv::spirv::AddressingModel::Logical,
+        //     rspirv::spirv::MemoryModel::Simple,
+        // );
 
         // Setup default variables such as GlobalInvocationId
         trace!("Setting Up Default Variables...");
@@ -1171,6 +1191,21 @@ impl Kernel {
             .execution_mode(main, spirv::ExecutionMode::LocalSize, vec![1, 1, 1]);
         self.b.begin_block(None).unwrap();
 
+        let addr_vars = ir
+            .schedule
+            .iter()
+            .map(|id| {
+                let uint64 = self.b.type_int(64, 0);
+                let ptr = self
+                    .b
+                    .type_pointer(None, spirv::StorageClass::Function, uint64);
+                let var = self
+                    .b
+                    .variable(ptr, None, spirv::StorageClass::Function, None);
+                var
+            })
+            .collect::<Vec<_>>();
+
         trace!("Recording Variables...");
         self.record_spv_vars(&ir.schedule, ir);
 
@@ -1205,8 +1240,12 @@ impl Kernel {
             .into_iter()
             .enumerate()
             .map(|(i, (arr, ref_ty))| {
-                let ptr =
-                    self.access_buffer_at_addr(self.idx.unwrap(), arr.device_address(), ref_ty);
+                let ptr = self.access_buffer_at_addr(
+                    self.idx.unwrap(),
+                    arr.device_address(),
+                    ref_ty,
+                    addr_vars[i],
+                );
                 self.b.store(ptr, schedule_spv[i], None, None).unwrap();
                 arr
             })
