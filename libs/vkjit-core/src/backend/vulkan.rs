@@ -1,6 +1,7 @@
 use bytemuck::cast_slice;
 use crevice::std140::{self, AsStd140};
 use screen_13::prelude::*;
+use std::fs;
 use std::sync::Arc;
 
 use crate::internal::{Access, Binding, Kernel};
@@ -68,6 +69,16 @@ impl Backend for VulkanBackend {
         let arrays = kernel.arrays.clone();
 
         let spv = kernel.assemble();
+
+        fs::write(
+            "/tmp/vkjit.spv",
+            &spv.iter()
+                .map(|word| unsafe { std::mem::transmute::<_, [u8; 4]>(word.to_le()) })
+                .flatten()
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+
         let pipeline = Arc::new(
             ComputePipeline::create(
                 &self.device(),
