@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use super::device::Device;
 
+#[derive(Debug)]
 pub struct BufferInfo {
     pub size: vk::DeviceSize,
     pub usage: vk::BufferUsageFlags,
@@ -23,6 +24,8 @@ impl Buffer {
     pub fn create(device: &Arc<Device>, info: impl Into<BufferInfo>) -> Self {
         let backend = device.clone();
         let info = info.into();
+
+        log::trace!("Creating Buffer with {:?}", info);
 
         let buffer_info = vk::BufferCreateInfo {
             size: info.size,

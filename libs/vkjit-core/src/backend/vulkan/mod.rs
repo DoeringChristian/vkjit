@@ -27,7 +27,10 @@ impl Array for Arc<Buffer> {
     }
 
     fn map(&self) -> &[u8] {
-        self.allocation.as_ref().unwrap().mapped_slice().unwrap()
+        let slice =
+            &self.allocation.as_ref().unwrap().mapped_slice().unwrap()[0..self.info.size as usize];
+        log::trace!("Mapping slice of size {}", slice.len());
+        slice
     }
 
     fn size(&self) -> usize {

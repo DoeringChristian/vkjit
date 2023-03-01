@@ -634,7 +634,7 @@ impl Kernel {
                 ptr,
                 val,
                 Some(spirv::MemoryAccess::ALIGNED),
-                [rspirv::dr::Operand::LiteralInt32(4)],
+                [rspirv::dr::Operand::LiteralInt32(ty.alignment() as _)],
             )
             .unwrap();
     }
@@ -651,16 +651,17 @@ impl Kernel {
     }
 
     fn load_buffer_at(&mut self, id: VarId, ir: &Ir, idx: u32, result_id: Option<u32>) -> u32 {
-        let ty = ir.var(id).ty().to_spirv(&mut self.b);
+        let ty = ir.var(id).ty();
+        let ty_spv = ty.to_spirv(&mut self.b);
         let ptr = self.access_buffer_at(id, ir, idx);
         let ret = self
             .b
             .load(
-                ty,
+                ty_spv,
                 result_id,
                 ptr,
                 Some(spirv::MemoryAccess::ALIGNED),
-                [rspirv::dr::Operand::LiteralInt32(4)],
+                [rspirv::dr::Operand::LiteralInt32(ty.alignment() as _)],
             )
             .unwrap();
         ret
@@ -676,13 +677,14 @@ impl Kernel {
     }
 
     fn store_buffer_at(&mut self, id: VarId, ir: &Ir, idx: u32, val: u32) {
+        let ty = ir.var(id).ty();
         let ptr = self.access_buffer_at(id, ir, idx);
         self.b
             .store(
                 ptr,
                 val,
                 Some(spirv::MemoryAccess::ALIGNED),
-                [rspirv::dr::Operand::LiteralInt32(4)],
+                [rspirv::dr::Operand::LiteralInt32(ty.alignment() as _)],
             )
             .unwrap();
     }
