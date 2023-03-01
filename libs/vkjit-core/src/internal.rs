@@ -555,7 +555,7 @@ pub struct Kernel {
     pub vars: HashMap<VarId, u32>,
     pub num: Option<usize>,
 
-    pub buffer_ref_ty: HashMap<VarId, (u32, u32)>,
+    pub buffer_ref_ty: HashMap<VarType, (u32, u32)>,
     pub arrays: Vec<<VulkanBackend as backend::Backend>::Array>,
 
     // Variables used by many kernels
@@ -632,8 +632,9 @@ impl Kernel {
     /// Note that idx is a spirv variable
     ///
     fn access_buffer_at(&mut self, id: VarId, ir: &Ir, idx: u32) -> u32 {
+        let ty = ir.var(id).ty();
         let addr = ir.arrays[&id].device_address();
-        let ref_ty = self.buffer_ref_ty[&id];
+        let ref_ty = self.buffer_ref_ty[&ty];
         let ptr = self.access_buffer_at_addr(idx, addr, ref_ty, self.vars[&id]);
         return ptr;
     }
@@ -673,6 +674,12 @@ impl Kernel {
         }
     }
     fn buffer_ptr_types(&mut self, ty: &VarType) -> (u32, u32) {
+        trace!("\tRecording types for buffer of type {:?}", ty);
+        if self.buffer_ref_ty.contains_key(ty) {
+            trace!("\t\tFound in cache.");
+            return self.buffer_ref_ty[ty];
+        }
+
         let spv_ty = ty.to_spirv(&mut self.b);
         let ptr_ty = self
             .b
@@ -689,14 +696,16 @@ impl Kernel {
         let ptr_st = self
             .b
             .type_pointer(None, spirv::StorageClass::PhysicalStorageBuffer, st);
-        (ptr_ty, ptr_st)
+        let ret = (ptr_ty, ptr_st);
+        self.buffer_ref_ty.insert(ty.clone(), ret);
+        ret
     }
 
     fn record_buffer_types(&mut self, schedule: &[VarId], ir: &Ir) {
         for id in ir.iter_se(schedule) {
-            if self.buffer_ref_ty.contains_key(&id) {
-                continue;
-            }
+            // if self.buffer_ref_ty.contains_key(&ty) {
+            //     continue;
+            // }
 
             let var = ir.var(id);
             match var.op {
@@ -704,25 +713,7 @@ impl Kernel {
                     let ty = var.ty();
                     let types = self.buffer_ptr_types(&ty);
 
-                    self.buffer_ref_ty.insert(id, types);
-                }
-                _ => {}
-            }
-        }
-    }
-    fn record_addr_var(&mut self, schedule: &[VarId], ir: &Ir) {
-        for id in ir.iter_se(schedule) {
-            if self.buffer_ref_ty.contains_key(&id) {
-                continue;
-            }
-
-            let var = ir.var(id);
-            match var.op {
-                Op::Binding => {
-                    // let ty = var.ty();
-                    // let types = self.buffer_ptr_types(&ty);
-                    //
-                    // self.buffer_ref_ty.insert(id, types);
+                    self.buffer_ref_ty.insert(ty.clone(), types);
                 }
                 _ => {}
             }
