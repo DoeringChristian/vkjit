@@ -184,7 +184,7 @@ impl Backend for VulkanBackend {
 
             self.device
                 .device
-                .wait_for_fences(&[fence], true, 100000)
+                .wait_for_fences(&[fence], true, std::u64::MAX)
                 .unwrap();
 
             self.device.device.device_wait_idle().unwrap();
