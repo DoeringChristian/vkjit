@@ -4,10 +4,10 @@ use vkjit_rust::*;
 fn main() {
     pretty_env_logger::init();
 
-    let x = Var::from(vec![1, 2, 3]) + 1.;
-    let x = arange(VarType::F32, 10);
+    let x = arange(VarType::U32, 10);
+    let y = x.clone() * 2.;
 
-    eval!(x);
+    eval!(x, y);
 
     dbg!(x);
 }

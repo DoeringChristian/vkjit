@@ -17,11 +17,13 @@ pub struct VulkanBackend {
 
 impl Array for Arc<Buffer> {
     fn device_address(&self) -> u64 {
-        unsafe {
+        let addr = unsafe {
             self.device.device.get_buffer_device_address(
                 &vk::BufferDeviceAddressInfo::builder().buffer(self.buffer),
             )
-        }
+        };
+        log::trace!("Address: {addr}");
+        addr
     }
 
     fn map(&self) -> &[u8] {
@@ -55,7 +57,7 @@ impl Backend for VulkanBackend {
                 size: data.len() as u64,
                 usage: vk::BufferUsageFlags::STORAGE_BUFFER
                     | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-                alignment: 4,
+                alignment: 0,
                 mapable: true,
             },
         );
@@ -74,7 +76,7 @@ impl Backend for VulkanBackend {
                 size: size as u64,
                 usage: vk::BufferUsageFlags::STORAGE_BUFFER
                     | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
-                alignment: 4,
+                alignment: 0,
                 mapable: true,
             },
         ))
