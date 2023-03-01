@@ -13,9 +13,9 @@ pub trait Array {
 
 pub trait Backend {
     type Array: Array;
-    type Device;
+    // type Device;
 
-    fn device(&self) -> &Self::Device;
+    // fn device(&self) -> &Self::Device;
 
     fn create() -> Self;
     fn create_array_from_slice(&self, data: &[u8]) -> Self::Array;

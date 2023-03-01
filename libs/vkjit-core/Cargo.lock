@@ -1442,9 +1442,11 @@ dependencies = [
 name = "vkjit-core"
 version = "0.1.0"
 dependencies = [
+ "ash 0.37.2+1.3.238",
  "bytemuck",
  "crevice",
  "glam",
+ "gpu-allocator",
  "inline-spirv",
  "log",
  "paste",
