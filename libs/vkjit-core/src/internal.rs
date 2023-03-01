@@ -626,7 +626,18 @@ impl Kernel {
             .unwrap();
         return ptr;
     }
-
+    fn store_buffer_at_addr(&mut self, idx: u32, addr: u64, ty: &VarType, addr_var: u32, val: u32) {
+        let ptr =
+            self.access_buffer_at_addr(self.idx.unwrap(), addr, self.buffer_ref_ty[ty], addr_var);
+        self.b
+            .store(
+                ptr,
+                val,
+                Some(spirv::MemoryAccess::ALIGNED),
+                [rspirv::dr::Operand::LiteralInt32(4)],
+            )
+            .unwrap();
+    }
     ///
     /// Return a pointer to the binding at an index
     /// Note that idx is a spirv variable
@@ -639,10 +650,43 @@ impl Kernel {
         return ptr;
     }
 
-    fn access_buffer(&mut self, id: VarId, ir: &Ir) -> u32 {
-        let idx = self.idx.unwrap();
-        self.access_buffer_at(id, ir, idx)
+    fn load_buffer_at(&mut self, id: VarId, ir: &Ir, idx: u32, result_id: Option<u32>) -> u32 {
+        let ty = ir.var(id).ty().to_spirv(&mut self.b);
+        let ptr = self.access_buffer_at(id, ir, idx);
+        let ret = self
+            .b
+            .load(
+                ty,
+                result_id,
+                ptr,
+                Some(spirv::MemoryAccess::ALIGNED),
+                [rspirv::dr::Operand::LiteralInt32(4)],
+            )
+            .unwrap();
+        ret
     }
+
+    // fn access_buffer(&mut self, id: VarId, ir: &Ir) -> u32 {
+    //     let idx = self.idx.unwrap();
+    //     self.access_buffer_at(id, ir, idx)
+    // }
+
+    fn load_buffer(&mut self, id: VarId, ir: &Ir, result_id: Option<u32>) -> u32 {
+        self.load_buffer_at(id, ir, self.idx.unwrap(), result_id)
+    }
+
+    fn store_buffer_at(&mut self, id: VarId, ir: &Ir, idx: u32, val: u32) {
+        let ptr = self.access_buffer_at(id, ir, idx);
+        self.b
+            .store(
+                ptr,
+                val,
+                Some(spirv::MemoryAccess::ALIGNED),
+                [rspirv::dr::Operand::LiteralInt32(4)],
+            )
+            .unwrap();
+    }
+
     fn set_num(&mut self, num: usize) {
         if let Some(num_) = self.num {
             assert!(
@@ -990,27 +1034,10 @@ impl Kernel {
 
                         self.record_if(condition_id, |s| {
                             // s.b.store(ptr, ret, None, None).unwrap();
-                            let ptr = s.access_buffer_at(var.deps[0], ir, idx);
-                            s.b.load(
-                                ty,
-                                Some(ret),
-                                ptr,
-                                Some(spirv::MemoryAccess::ALIGNED),
-                                [rspirv::dr::Operand::LiteralInt32(4)],
-                            )
-                            .unwrap();
+                            s.load_buffer_at(id, ir, idx, Some(ret));
                         });
                     } else {
-                        let ptr = self.access_buffer_at(var.deps[0], ir, idx);
-                        self.b
-                            .load(
-                                ty,
-                                Some(ret),
-                                ptr,
-                                Some(spirv::MemoryAccess::ALIGNED),
-                                [rspirv::dr::Operand::LiteralInt32(4)],
-                            )
-                            .unwrap();
+                        self.load_buffer_at(id, ir, idx, Some(ret));
                     }
                     ret
                 }
@@ -1025,28 +1052,15 @@ impl Kernel {
                 );
                 let ty = var.ty.to_spirv(&mut self.b);
                 let idx = self.record_ops(var.deps[1], ir);
-                let ptr = self.access_buffer_at(var.side_effects[0], ir, idx);
+                // let ptr = self.access_buffer_at(var.side_effects[0], ir, idx);
 
                 if var.deps.len() >= 4 {
                     let condition_id = self.record_ops(var.deps[3], ir);
                     self.record_if(condition_id, |s| {
-                        s.b.store(
-                            ptr,
-                            src,
-                            Some(spirv::MemoryAccess::ALIGNED),
-                            [rspirv::dr::Operand::LiteralInt32(4)],
-                        )
-                        .unwrap();
+                        s.store_buffer_at(var.side_effects[0], ir, idx, src);
                     });
                 } else {
-                    self.b
-                        .store(
-                            ptr,
-                            src,
-                            Some(spirv::MemoryAccess::ALIGNED),
-                            [rspirv::dr::Operand::LiteralInt32(4)],
-                        )
-                        .unwrap();
+                    self.store_buffer_at(var.side_effects[0], ir, idx, src);
                 }
 
                 src
@@ -1068,21 +1082,7 @@ impl Kernel {
                 self.op_results.insert(id, ret);
                 ret
             }
-            Op::Binding => {
-                let ty = var.ty.to_spirv(&mut self.b);
-                let ptr = self.access_buffer(id, ir);
-                let ret = self
-                    .b
-                    .load(
-                        ty,
-                        None,
-                        ptr,
-                        Some(spirv::MemoryAccess::ALIGNED),
-                        [rspirv::dr::Operand::LiteralInt32(4)],
-                    )
-                    .unwrap();
-                ret
-            }
+            Op::Binding => self.load_buffer(id, ir, None),
             Op::Select => {
                 let ty = var.ty.to_spirv(&mut self.b);
                 let cond_id = self.record_ops(var.deps[0], ir);
@@ -1190,7 +1190,7 @@ impl Kernel {
 
                 // Create dst arrays
                 let arr = ir.backend.create_array(self.num.unwrap() * ty.stride());
-                (arr, ptr_types)
+                (arr, ty.clone())
             })
             .collect::<Vec<_>>();
 
@@ -1267,21 +1267,14 @@ impl Kernel {
         let dst = dst
             .into_iter()
             .enumerate()
-            .map(|(i, (arr, ref_ty))| {
-                let ptr = self.access_buffer_at_addr(
+            .map(|(i, (arr, ty))| {
+                self.store_buffer_at_addr(
                     self.idx.unwrap(),
                     arr.device_address(),
-                    ref_ty,
+                    &ty,
                     addr_vars[i],
+                    schedule_spv[i],
                 );
-                self.b
-                    .store(
-                        ptr,
-                        schedule_spv[i],
-                        Some(spirv::MemoryAccess::ALIGNED),
-                        [rspirv::dr::Operand::LiteralInt32(4)],
-                    )
-                    .unwrap();
                 arr
             })
             .collect::<Vec<_>>();
