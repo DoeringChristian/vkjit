@@ -108,7 +108,7 @@ impl Backend for VulkanBackend {
             let pipeline_shader_info = vk::PipelineShaderStageCreateInfo::builder()
                 .stage(vk::ShaderStageFlags::COMPUTE)
                 .module(shader)
-                .name(CStr::from_bytes_with_nul(b"Eval\0").unwrap());
+                .name(CStr::from_bytes_with_nul(b"main\0").unwrap());
             let compute_pipeline_info = vk::ComputePipelineCreateInfo::builder()
                 .stage(pipeline_shader_info.build())
                 .layout(pipeline_layout);

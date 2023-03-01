@@ -4,7 +4,8 @@ use vkjit_rust::*;
 fn main() {
     pretty_env_logger::init();
 
-    let x = Var::from(vec![1., 2., 3.]) + 1.;
+    let x = Var::from(vec![1, 2, 3]) + 1.;
+    let x = arange(VarType::F32, 10);
 
     eval!(x);
 

@@ -614,7 +614,7 @@ impl Kernel {
         let ty_u64 = self.b.type_int(64, 0);
         let addr_const = self.b.constant_u64(ty_u64, addr);
         // let addr_ty = self.b.type_pointer(None, spirv::StorageClass::Function, ty_u64);
-        self.b.store(var, addr_const, None, None);
+        self.b.store(var, addr_const, None, None).unwrap();
         let addr = self.b.load(ty_u64, None, var, None, None).unwrap();
 
         let (ptr_ty, ptr_st) = ref_ty;
@@ -1000,11 +1000,26 @@ impl Kernel {
                         self.record_if(condition_id, |s| {
                             // s.b.store(ptr, ret, None, None).unwrap();
                             let ptr = s.access_buffer_at(var.deps[0], ir, idx);
-                            s.b.load(ty, Some(ret), ptr, None, None).unwrap();
+                            s.b.load(
+                                ty,
+                                Some(ret),
+                                ptr,
+                                Some(spirv::MemoryAccess::ALIGNED),
+                                [rspirv::dr::Operand::LiteralInt32(4)],
+                            )
+                            .unwrap();
                         });
                     } else {
                         let ptr = self.access_buffer_at(var.deps[0], ir, idx);
-                        self.b.load(ty, Some(ret), ptr, None, None).unwrap();
+                        self.b
+                            .load(
+                                ty,
+                                Some(ret),
+                                ptr,
+                                Some(spirv::MemoryAccess::ALIGNED),
+                                [rspirv::dr::Operand::LiteralInt32(4)],
+                            )
+                            .unwrap();
                     }
                     ret
                 }
@@ -1024,10 +1039,23 @@ impl Kernel {
                 if var.deps.len() >= 4 {
                     let condition_id = self.record_ops(var.deps[3], ir);
                     self.record_if(condition_id, |s| {
-                        s.b.store(ptr, src, None, None).unwrap();
+                        s.b.store(
+                            ptr,
+                            src,
+                            Some(spirv::MemoryAccess::ALIGNED),
+                            [rspirv::dr::Operand::LiteralInt32(4)],
+                        )
+                        .unwrap();
                     });
                 } else {
-                    self.b.store(ptr, src, None, None).unwrap();
+                    self.b
+                        .store(
+                            ptr,
+                            src,
+                            Some(spirv::MemoryAccess::ALIGNED),
+                            [rspirv::dr::Operand::LiteralInt32(4)],
+                        )
+                        .unwrap();
                 }
 
                 src
@@ -1052,7 +1080,16 @@ impl Kernel {
             Op::Binding => {
                 let ty = var.ty.to_spirv(&mut self.b);
                 let ptr = self.access_buffer(id, ir);
-                let ret = self.b.load(ty, None, ptr, None, None).unwrap();
+                let ret = self
+                    .b
+                    .load(
+                        ty,
+                        None,
+                        ptr,
+                        Some(spirv::MemoryAccess::ALIGNED),
+                        [rspirv::dr::Operand::LiteralInt32(4)],
+                    )
+                    .unwrap();
                 ret
             }
             Op::Select => {
@@ -1246,7 +1283,14 @@ impl Kernel {
                     ref_ty,
                     addr_vars[i],
                 );
-                self.b.store(ptr, schedule_spv[i], None, None).unwrap();
+                self.b
+                    .store(
+                        ptr,
+                        schedule_spv[i],
+                        Some(spirv::MemoryAccess::ALIGNED),
+                        [rspirv::dr::Operand::LiteralInt32(4)],
+                    )
+                    .unwrap();
                 arr
             })
             .collect::<Vec<_>>();
