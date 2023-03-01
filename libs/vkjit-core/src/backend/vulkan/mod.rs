@@ -155,6 +155,34 @@ impl Backend for VulkanBackend {
                 compute_pipeline,
             );
             self.device.device.cmd_dispatch(cmd_buffer, num as _, 1, 1);
+            self.device.device.end_command_buffer(cmd_buffer).unwrap();
+
+            let queue = self
+                .device
+                .device
+                .get_device_queue(self.device.queue_family_index, 0);
+
+            let fence = self
+                .device
+                .device
+                .create_fence(&vk::FenceCreateInfo::builder(), None)
+                .unwrap();
+
+            let submit_info = vk::SubmitInfo::builder()
+                .wait_semaphores(&[])
+                .wait_dst_stage_mask(&[])
+                .command_buffers(&[cmd_buffer])
+                .build();
+
+            self.device
+                .device
+                .queue_submit(queue, &[submit_info], fence)
+                .unwrap();
+
+            self.device
+                .device
+                .wait_for_fences(&[fence], true, 100000)
+                .unwrap();
 
             self.device.device.device_wait_idle().unwrap();
         }
