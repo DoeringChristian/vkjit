@@ -188,6 +188,22 @@ impl Backend for VulkanBackend {
                 .unwrap();
 
             self.device.device.device_wait_idle().unwrap();
+
+            log::trace!("Cleanup");
+            self.device
+                .device
+                .reset_command_pool(cmd_pool, vk::CommandPoolResetFlags::default())
+                .unwrap();
+            self.device.device.destroy_fence(fence, None);
+            self.device
+                .device
+                .destroy_pipeline_layout(pipeline_layout, None);
+            self.device
+                .device
+                .destroy_pipeline_cache(pipeline_cache, None);
+            self.device.device.destroy_shader_module(shader, None);
+            self.device.device.destroy_pipeline(compute_pipeline, None);
+            self.device.device.destroy_command_pool(cmd_pool, None);
         }
     }
 }

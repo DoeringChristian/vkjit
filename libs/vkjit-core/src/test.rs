@@ -134,7 +134,7 @@ mod test {
 
         let y = ir.array_f32(&[0., 0., 0.]);
 
-        ir.scatter(x, y, idx, None);
+        let x = ir.scatter(x, y, idx, None);
 
         ir.eval(&[x]);
 
@@ -152,7 +152,7 @@ mod test {
         let const3 = ir.const_u32(3);
         let cond = ir.lt(idx, const3);
 
-        ir.scatter(x, y, idx, Some(cond));
+        let x = ir.scatter(x, y, idx, Some(cond));
 
         ir.eval(&[x]);
 
@@ -187,6 +187,7 @@ mod test {
 
     #[test]
     fn dec_ref_count() {
+        pretty_env_logger::init();
         let mut ir = Ir::new();
 
         let x = ir.array_f32(&[1., 2., 3.]);
@@ -201,6 +202,6 @@ mod test {
 
         assert_eq!(ir.vars.len(), 3);
         assert_eq!(ir.vars[0].ref_count, 0);
-        assert_eq!(ir.backend.arrays.len(), 1);
+        assert_eq!(ir.arrays.len(), 1);
     }
 }

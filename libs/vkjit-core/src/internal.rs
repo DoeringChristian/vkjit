@@ -475,8 +475,18 @@ impl Ir {
         let mut var = self.var_mut(id);
         var.ref_count += 1;
     }
-    pub fn clear_schedule(&mut self) {
+    fn clear_schedule(&mut self) {
         for id in self.schedule.clone() {
+            let var = self.var(id);
+            // trace!("Clearing var [{}] = {:?} from schedule", id.0, var);
+            for id in var
+                .deps
+                .clone()
+                .iter()
+                .chain(var.side_effects.clone().iter())
+            {
+                self.dec_ref_count(*id);
+            }
             self.dec_ref_count(id);
         }
         self.schedule.clear();
