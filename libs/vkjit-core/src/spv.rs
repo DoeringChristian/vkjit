@@ -1,5 +1,18 @@
 use spirv;
 
+pub trait Write {
+    fn num(&self) -> usize;
+    fn write(&self, dst: &mut Vec<u32>);
+}
+
+pub struct Block {}
+
+pub struct FuncDef {
+    parameters: Vec<u32>,
+    blocks: Vec<Block>,
+}
+
+#[derive(Default)]
 pub struct SpirvBuilder {
     version: (u8, u8),
 
@@ -8,10 +21,11 @@ pub struct SpirvBuilder {
     imports: Vec<u32>,
     memory_model: Vec<u32>,
     entry_points: Vec<u32>,
-    execution_modes: Vec<u32>,
+    execution_mode: Vec<u32>,
+    // debug: Vec<u32>,
     annoations: Vec<u32>,
     types: Vec<u32>,
-    function_decl: Vec<u32>,
+    // function_decl: Vec<u32>,
     function_def: Vec<u32>,
 }
 
