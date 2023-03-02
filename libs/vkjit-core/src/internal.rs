@@ -477,16 +477,6 @@ impl Ir {
     }
     fn clear_schedule(&mut self) {
         for id in self.schedule.clone() {
-            let var = self.var(id);
-            // trace!("Clearing var [{}] = {:?} from schedule", id.0, var);
-            for id in var
-                .deps
-                .clone()
-                .iter()
-                .chain(var.side_effects.clone().iter())
-            {
-                self.dec_ref_count(*id);
-            }
             self.dec_ref_count(id);
         }
         self.schedule.clear();
@@ -506,6 +496,19 @@ impl Ir {
         let dst = k.compile(self);
 
         self.backend.execute(k, &dst);
+
+        trace!("Clearing References from schedule variables...");
+        for id in self.schedule.clone() {
+            let var = self.var(id);
+            for id in var
+                .deps
+                .clone()
+                .iter()
+                .chain(var.side_effects.clone().iter())
+            {
+                self.dec_ref_count(*id);
+            }
+        }
 
         trace!("Overwriting Evaluated Variables...");
         // Overwrite variables
