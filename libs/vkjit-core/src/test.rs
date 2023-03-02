@@ -20,7 +20,7 @@ mod test {
     }
     #[test]
     fn test_linspace_eval2() {
-        pretty_env_logger::init();
+        // pretty_env_logger::init();
         let mut ir = Ir::new();
 
         let start = ir.const_f32(2.);
@@ -142,9 +142,10 @@ mod test {
     }
     #[test]
     fn test_scatter_conditional() {
+        // pretty_env_logger::init();
         let mut ir = Ir::new();
 
-        let idx = ir.arange(VarType::U32, 3);
+        let idx = ir.arange(VarType::U32, 5);
         let x = ir.array_f32(&[0., 1., 2., 3., 4.]);
 
         let y = ir.array_f32(&[0., 0., 0., 0., 0.]);
@@ -187,7 +188,7 @@ mod test {
 
     #[test]
     fn dec_ref_count() {
-        pretty_env_logger::init();
+        // pretty_env_logger::init();
         let mut ir = Ir::new();
 
         let x = ir.array_f32(&[1., 2., 3.]);

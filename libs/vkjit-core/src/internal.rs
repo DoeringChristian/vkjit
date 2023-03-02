@@ -723,9 +723,12 @@ impl Kernel {
             let ty = var.ty();
             match var.op {
                 Op::Binding => {
-                    self.set_num(ir.arrays[&id].size() / ty.stride());
+                    let num = ir.arrays[&id].size() / ty.stride();
+                    trace!("\t\tFound Variable with size {num}");
+                    self.set_num(num);
                 }
                 Op::Arange(num) => {
+                    trace!("\t\tFound Variable with size {num}");
                     self.set_num(num);
                 }
                 _ => (),
@@ -1069,8 +1072,8 @@ impl Kernel {
                 let idx = self.record_ops(var.deps[1], ir);
                 // let ptr = self.access_buffer_at(var.side_effects[0], ir, idx);
 
-                if var.deps.len() >= 4 {
-                    let condition_id = self.record_ops(var.deps[3], ir);
+                if var.deps.len() >= 3 {
+                    let condition_id = self.record_ops(var.deps[2], ir);
                     self.record_if(condition_id, |s| {
                         s.store_buffer_at(var.side_effects[0], ir, idx, src);
                     });
