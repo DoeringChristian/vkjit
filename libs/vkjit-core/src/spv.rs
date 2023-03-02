@@ -24,7 +24,7 @@ impl SpirvBuilder {
         // TODO: get bound
 
         dst.push(spirv::MAGIC_NUMBER); // 0
-        dst.push((self.version.0 << 16) as u32 | (self.version.1 << 8) as u32); // 1
+        dst.push(((self.version.0 as u32) << 16) | ((self.version.1 as u32) << 8)); // 1
         dst.push(0); // 2
         dst.push(bound); // 3
         dst.push(0); // 4
