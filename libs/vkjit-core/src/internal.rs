@@ -2,7 +2,7 @@ use bytemuck::cast_slice;
 use paste::paste;
 use rspirv::binary::{Assemble, Disassemble};
 use rspirv::spirv;
-use screen_13::prelude::{vk, ComputePipeline, LazyPool, RenderGraph};
+// use screen_13::prelude::{vk, ComputePipeline, LazyPool, RenderGraph};
 use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -165,17 +165,9 @@ macro_rules! bop {
     };
 }
 impl Ir {
-    pub fn new_sc13(device: &Arc<screen_13::driver::Device>) -> Self {
-        Self {
-            backend: VulkanBackend::create(),
-            arrays: HashMap::default(),
-            vars: Vec::default(),
-            schedule: Vec::default(),
-        }
-    }
     pub fn new() -> Self {
-        let cfg = screen_13::prelude::DriverConfig::new().build();
-        let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
+        // let cfg = screen_13::prelude::DriverConfig::new().build();
+        // let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
         // let sc13 = screen_13::prelude::EventLoop::new()
         //     .debug(true)
         //     .build()

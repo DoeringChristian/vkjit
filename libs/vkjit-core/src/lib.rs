@@ -1,5 +1,4 @@
 #[allow(dead_code)]
-mod array;
 mod backend;
 #[allow(dead_code)]
 pub mod internal;
