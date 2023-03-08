@@ -161,7 +161,7 @@ impl Device {
 
             let queue_family_index = queue_family_index as u32;
 
-            let device_extension = [];
+            let device_extension = [khr::BufferDeviceAddress::name().as_ptr()];
 
             let properties = [1.0];
 
@@ -183,6 +183,12 @@ impl Device {
             let mut features2 = features2.build();
 
             get_physical_device_features2(pdevice, &mut features2);
+
+            // Testing if required features are enabled
+            if vulkan_1_2_features.buffer_device_address != vk::TRUE {
+                log::error!("BufferDeviceAddress could not be enabled!");
+                panic!();
+            }
 
             let device_create_info = vk::DeviceCreateInfo::builder()
                 .queue_create_infos(std::slice::from_ref(&queue_info))
