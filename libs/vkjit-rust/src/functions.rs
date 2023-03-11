@@ -69,6 +69,18 @@ pub fn eval_internal(schedule: &[VarId]) {
     ir.eval(&schedule);
 }
 
+#[macro_export]
+macro_rules! schedule {
+    ($($var:expr),*) => {
+        let schedule = [$($var.id()),*];
+        $crate::schedule_internal(&schedule);
+    };
+}
+pub fn schedule_internal(schedule: &[VarId]) {
+    let mut ir = IR.lock().unwrap();
+    ir.schedule(&schedule);
+}
+
 #[cfg(test)]
 mod test {
     use crate::*;

@@ -2,7 +2,7 @@ use bytemuck::cast_slice;
 use paste::paste;
 use rspirv::binary::{Assemble, Disassemble};
 use rspirv::spirv;
-use screen_13::prelude::{vk, ComputePipeline, LazyPool, RenderGraph};
+// use screen_13::prelude::{vk, ComputePipeline, LazyPool, RenderGraph};
 use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -13,8 +13,10 @@ use log::{error, trace, warn};
 
 use crevice::std140::{self, AsStd140};
 
-use crate::array::{self, Array};
+// use crate::array::{self, Array};
 
+use crate::backend::vulkan::VulkanBackend;
+use crate::backend::{self, Array, Backend};
 use crate::iterators::{DepIterator, MutSeVisitor, SeIterator};
 use crate::vartype::*;
 
@@ -116,22 +118,22 @@ impl Var {
     }
 }
 
-#[derive(Debug)]
-pub struct Backend {
-    device: Arc<screen_13::prelude::Device>,
-    pub(crate) arrays: HashMap<VarId, array::Array>,
-}
+// #[derive(Debug)]
+// pub struct Backend {
+//     device: Arc<screen_13::prelude::Device>,
+// }
 
 pub struct Ir {
-    pub(crate) backend: Backend,
+    pub(crate) backend: VulkanBackend,
     pub(crate) vars: Vec<Var>,
     schedule: Vec<VarId>,
+    pub(crate) arrays: HashMap<VarId, <VulkanBackend as Backend>::Array>,
 }
 
 impl Debug for Ir {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut st = f.debug_struct("Ir");
-        st.field("backend", &self.backend);
+        // st.field("backend", &self.backend);
 
         for (i, x) in self.vars.iter().enumerate() {
             st.field(&format!("[{i}]"), x);
@@ -163,35 +165,23 @@ macro_rules! bop {
     };
 }
 impl Ir {
-    pub fn new_sc13(device: &Arc<screen_13::driver::Device>) -> Self {
-        Self {
-            backend: Backend {
-                device: device.clone(),
-                arrays: HashMap::default(),
-            },
-            vars: Vec::default(),
-            schedule: Vec::default(),
-        }
-    }
     pub fn new() -> Self {
-        let cfg = screen_13::prelude::DriverConfig::new().build();
-        let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
+        // let cfg = screen_13::prelude::DriverConfig::new().build();
+        // let device = Arc::new(screen_13::prelude::Device::new(cfg).unwrap());
         // let sc13 = screen_13::prelude::EventLoop::new()
         //     .debug(true)
         //     .build()
         //     .unwrap();
         // let device = sc13.device.clone();
         Self {
-            backend: Backend {
-                device,
-                arrays: HashMap::default(),
-            },
+            backend: VulkanBackend::create(),
+            arrays: HashMap::default(),
             vars: Vec::default(),
             schedule: Vec::default(),
         }
     }
-    pub fn array(&self, id: VarId) -> &array::Array {
-        &self.backend.arrays[&id]
+    pub fn array(&self, id: VarId) -> &<VulkanBackend as backend::Backend>::Array {
+        &self.arrays[&id]
     }
     fn new_var(&mut self, op: Op, dependencies: Vec<VarId>, ty: VarType) -> VarId {
         self.push_var(Var {
@@ -328,14 +318,8 @@ impl Ir {
             side_effects: vec![],
             ref_count: 1,
         });
-        self.backend.arrays.insert(
-            id,
-            Array::from_slice(
-                &self.backend.device,
-                data,
-                vk::BufferUsageFlags::STORAGE_BUFFER,
-            ),
-        );
+        self.arrays
+            .insert(id, self.backend.create_array_from_slice(cast_slice(data)));
         id
     }
     pub fn array_i32(&mut self, data: &[i32]) -> VarId {
@@ -346,14 +330,8 @@ impl Ir {
             side_effects: vec![],
             ref_count: 1,
         });
-        self.backend.arrays.insert(
-            id,
-            Array::from_slice(
-                &self.backend.device,
-                data,
-                vk::BufferUsageFlags::STORAGE_BUFFER,
-            ),
-        );
+        self.arrays
+            .insert(id, self.backend.create_array_from_slice(cast_slice(data)));
         id
     }
     pub fn array_u32(&mut self, data: &[u32]) -> VarId {
@@ -364,14 +342,8 @@ impl Ir {
             side_effects: vec![],
             ref_count: 1,
         });
-        self.backend.arrays.insert(
-            id,
-            Array::from_slice(
-                &self.backend.device,
-                data,
-                vk::BufferUsageFlags::STORAGE_BUFFER,
-            ),
-        );
+        self.arrays
+            .insert(id, self.backend.create_array_from_slice(cast_slice(data)));
         id
     }
     pub fn getattr(&mut self, src_id: VarId, idx: usize) -> VarId {
@@ -427,11 +399,11 @@ impl Ir {
         })
     }
     pub fn is_buffer(&self, id: &VarId) -> bool {
-        self.backend.arrays.contains_key(id)
+        self.arrays.contains_key(id)
     }
     pub fn str(&self, id: VarId) -> String {
         let var = &self.var(id);
-        let slice = screen_13::prelude::Buffer::mapped_slice(&self.backend.arrays[&id].buf);
+        let slice = self.arrays[&id].map();
         match var.ty {
             VarType::F32 => {
                 format!("{:?}", cast_slice::<_, f32>(slice))
@@ -450,7 +422,8 @@ impl Ir {
     }
     pub fn print_buffer(&self, id: VarId) {
         let var = &self.var(id);
-        let slice = screen_13::prelude::Buffer::mapped_slice(&self.backend.arrays[&id].buf);
+        // let slice = screen_13::prelude::Buffer::mapped_slice(&self.arrays[&id].buf);
+        let slice = self.arrays[&id].map();
         match var.ty {
             VarType::F32 => {
                 println!("{:?}", cast_slice::<_, f32>(slice))
@@ -469,7 +442,8 @@ impl Ir {
     }
     pub fn as_slice<T: bytemuck::Pod>(&self, id: VarId) -> &[T] {
         let var = &self.var(id);
-        let slice = screen_13::prelude::Buffer::mapped_slice(&self.backend.arrays[&id].buf);
+        // let slice = screen_13::prelude::Buffer::mapped_slice(&self.arrays[&id].buf);
+        let slice = &self.arrays[&id].map();
         assert!(var.ty.type_id() == TypeId::of::<T>());
         cast_slice(slice)
     }
@@ -483,7 +457,7 @@ impl Ir {
             var.ref_count -= 1;
 
             if var.ref_count == 0 {
-                ir.backend.arrays.remove(&id);
+                ir.arrays.remove(&id);
                 return true;
             }
             return false;
@@ -493,7 +467,7 @@ impl Ir {
         let mut var = self.var_mut(id);
         var.ref_count += 1;
     }
-    pub fn clear_schedule(&mut self) {
+    fn clear_schedule(&mut self) {
         for id in self.schedule.clone() {
             self.dec_ref_count(id);
         }
@@ -513,73 +487,24 @@ impl Ir {
         let mut k = Kernel::new();
         let dst = k.compile(self);
 
-        // Record render graph
-        trace!("Recording Render Graph...");
-        let mut graph = RenderGraph::new();
-        let mut pool = LazyPool::new(&self.backend.device);
+        self.backend.execute(k, &dst);
 
-        let module = k.b.module();
-        // #[cfg(test)]
-        trace!("{}", module.disassemble());
-
-        let spv = module.assemble();
-        let pipeline = Arc::new(
-            ComputePipeline::create(
-                &self.backend.device,
-                screen_13::prelude::ComputePipelineInfo::default(),
-                screen_13::prelude::Shader::new_compute(spv),
-            )
-            .unwrap(),
-        );
-
-        // Collect nodes and corresponding bindings
-        trace!("Collecting Nodes and Bindings...");
-        let mut nodes = k
-            .bindings
-            .iter()
-            .map(|(id, binding)| {
-                let arr = self.array(*id).clone();
-                let node = graph.bind_node(&arr.buf);
-                (*binding, node)
-            })
-            .collect::<Vec<_>>();
-        nodes.extend(dst.iter().map(|(binding, arr)| {
-            let node = graph.bind_node(&arr.buf);
-            (*binding, node)
-        }));
-
-        let mut pass = graph.begin_pass("Eval kernel").bind_pipeline(&pipeline);
-        for (binding, node) in nodes {
-            match binding.access {
-                Access::Read => {
-                    trace!("Binding buffer to {:?}", binding);
-                    pass = pass.read_descriptor((binding.set, binding.binding), node);
-                }
-                Access::Write => {
-                    trace!("Binding buffer to {:?}", binding);
-                    pass = pass.write_descriptor((binding.set, binding.binding), node);
-                }
+        trace!("Clearing References from schedule variables...");
+        for id in self.schedule.clone() {
+            let var = self.var(id);
+            for id in var
+                .deps
+                .clone()
+                .iter()
+                .chain(var.side_effects.clone().iter())
+            {
+                self.dec_ref_count(*id);
             }
         }
-        trace!(
-            "Recording Compute Pass of size ({}, 1, 1)...",
-            k.num.unwrap()
-        );
-        let num = k.num.unwrap();
-        pass.record_compute(move |compute, _| {
-            compute.dispatch(num as u32, 1, 1);
-        })
-        .submit_pass();
-
-        trace!("Resolving Graph...");
-        graph.resolve().submit(&mut pool, 0).unwrap();
-
-        trace!("Executing Computations...");
-        unsafe { self.backend.device.device_wait_idle().unwrap() };
 
         trace!("Overwriting Evaluated Variables...");
         // Overwrite variables
-        for (i, (_, arr)) in dst.into_iter().enumerate() {
+        for (i, arr) in dst.into_iter().enumerate() {
             let id = self.schedule[i];
             let var = self.var_mut(id);
             trace!("Overwriting variable {:?}", var);
@@ -588,11 +513,11 @@ impl Ir {
                 op: Op::Binding,
                 deps: vec![],
                 side_effects: vec![],
-                ty: arr.ty.clone(),
+                ty: var.ty().clone(),
                 ref_count,
             };
             trace!("with variable {:?}", var);
-            self.backend.arrays.insert(id, arr);
+            self.arrays.insert(id, arr);
         }
 
         // Clear schedule
@@ -635,9 +560,8 @@ pub struct Kernel {
     pub vars: HashMap<VarId, u32>,
     pub num: Option<usize>,
 
-    pub bindings: HashMap<VarId, Binding>,
-    pub arrays: HashMap<VarId, u32>,
-    pub array_structs: HashMap<VarType, u32>,
+    pub buffer_ref_ty: HashMap<VarType, (u32, u32)>,
+    pub arrays: Vec<<VulkanBackend as backend::Backend>::Array>,
 
     // Variables used by many kernels
     pub idx: Option<u32>,
@@ -648,122 +572,128 @@ impl Debug for Kernel {
         f.debug_struct("Kernel")
             .field("vars", &self.op_results)
             .field("num", &self.num)
-            .field("bindings", &self.bindings)
+            // .field("bindings", &self.bindings)
             .field("idx", &self.idx)
             .field("global_invocation_id", &self.global_invocation_id)
             .finish()
     }
 }
 
+//
+// Sample code for using GLSL, bufferreference2
+// Shader playground: https://shader-playground.timjones.io/421ec46893e143d7947b5cad3eb945a7
+// ```glsl
+// #version 460
+// #extension GL_EXT_buffer_reference2 : require
+// #extension GL_EXT_scalar_block_layout : enable
+// #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+//
+// layout(buffer_reference, scalar) buffer bufferReference {int b[]; };
+//
+// void main()
+// {
+//     uint64_t addr = 0;
+// 	int b = bufferReference(addr).b[0];
+// }
+//
+// ```
+//
 impl Kernel {
     pub fn new() -> Self {
         Self {
             b: rspirv::dr::Builder::new(),
             op_results: HashMap::default(),
             vars: HashMap::default(),
-            bindings: HashMap::default(),
-            arrays: HashMap::default(),
-            array_structs: HashMap::default(),
+            buffer_ref_ty: HashMap::default(),
+            arrays: vec![],
             num: None,
             idx: None,
             global_invocation_id: None,
         }
     }
-    fn binding(&mut self, id: VarId, access: Access) -> Binding {
-        if !self.bindings.contains_key(&id) {
-            let binding = Binding {
-                set: 0,
-                binding: self.bindings.len() as u32,
-                access,
-            };
-            self.bindings.insert(id, binding);
-            binding
-        } else {
-            self.bindings[&id]
-        }
-    }
-    fn record_array_struct_ty(&mut self, ty: &VarType) -> u32 {
-        if self.array_structs.contains_key(ty) {
-            return self.array_structs[ty];
-        }
-        let spv_ty = ty.to_spirv(&mut self.b);
+    fn access_buffer_at_addr(&mut self, idx: u32, addr: u64, ref_ty: (u32, u32), var: u32) -> u32 {
+        trace!("Accessing buffer at address: {addr}");
+        let int_ty = self.b.type_int(32, 1);
+        let int_0 = self.b.constant_u32(int_ty, 0);
 
-        let ty_rta = self.b.type_runtime_array(spv_ty);
-        let ty_struct = self.b.type_struct(vec![ty_rta]);
-        let ty_struct_ptr = self
+        let ty_u64 = self.b.type_int(64, 0);
+        let addr_const = self.b.constant_u64(ty_u64, addr);
+        // let addr_ty = self.b.type_pointer(None, spirv::StorageClass::Function, ty_u64);
+        self.b.store(var, addr_const, None, None).unwrap();
+        let addr = self.b.load(ty_u64, None, var, None, None).unwrap();
+
+        let (ptr_ty, ptr_st) = ref_ty;
+
+        let ptr = self.b.convert_u_to_ptr(ptr_st, None, addr).unwrap();
+        let ptr = self
             .b
-            .type_pointer(None, spirv::StorageClass::Uniform, ty_struct);
-
-        let stride = ty.stride();
-        self.b.decorate(
-            ty_rta,
-            spirv::Decoration::ArrayStride,
-            vec![rspirv::dr::Operand::LiteralInt32(stride as u32)],
-        );
-
+            .access_chain(ptr_ty, None, ptr, vec![int_0, idx])
+            .unwrap();
+        return ptr;
+    }
+    fn store_buffer_at_addr(&mut self, idx: u32, addr: u64, ty: &VarType, addr_var: u32, val: u32) {
+        let ptr =
+            self.access_buffer_at_addr(self.idx.unwrap(), addr, self.buffer_ref_ty[ty], addr_var);
         self.b
-            .decorate(ty_struct, spirv::Decoration::BufferBlock, vec![]);
-        self.b.member_decorate(
-            ty_struct,
-            0,
-            spirv::Decoration::Offset,
-            vec![rspirv::dr::Operand::LiteralInt32(0)],
-        );
-        self.b.name(ty_struct, ty.name());
-
-        self.array_structs.insert(ty.clone(), ty_struct_ptr);
-        ty_struct_ptr
-    }
-    fn record_binding(&mut self, id: VarId, ir: &Ir, access: Access) -> u32 {
-        if self.arrays.contains_key(&id) {
-            return self.arrays[&id];
-        }
-
-        let var = &ir.var(id);
-
-        //self.set_num(var.array.as_ref().unwrap().count());
-        // https://shader-playground.timjones.io/3af32078f879d8599902e46b919dbfe3
-        let binding = self.binding(id, access);
-        let ty_struct_ptr = self.record_array_struct_ty(&var.ty);
-
-        let st = self
-            .b
-            .variable(ty_struct_ptr, None, spirv::StorageClass::Uniform, None);
-        self.b.decorate(
-            st,
-            spirv::Decoration::Binding,
-            vec![rspirv::dr::Operand::LiteralInt32(binding.binding)],
-        );
-        self.b.decorate(
-            st,
-            spirv::Decoration::DescriptorSet,
-            vec![rspirv::dr::Operand::LiteralInt32(binding.set)],
-        );
-        self.arrays.insert(id, st);
-        st
+            .store(
+                ptr,
+                val,
+                Some(spirv::MemoryAccess::ALIGNED),
+                [rspirv::dr::Operand::LiteralInt32(ty.alignment() as _)],
+            )
+            .unwrap();
     }
     ///
     /// Return a pointer to the binding at an index
     /// Note that idx is a spirv variable
     ///
-    fn access_binding_at(&mut self, id: VarId, ir: &Ir, idx: u32) -> u32 {
-        let var = &ir.var(id);
-        let ty = var.ty.to_spirv(&mut self.b);
-        let ty_int = self.b.type_int(32, 1);
-        let int_0 = self.b.constant_u32(ty_int, 0);
+    fn access_buffer_at(&mut self, id: VarId, ir: &Ir, idx: u32) -> u32 {
+        let ty = ir.var(id).ty();
+        let addr = ir.arrays[&id].device_address();
+        let ref_ty = self.buffer_ref_ty[&ty];
+        let ptr = self.access_buffer_at_addr(idx, addr, ref_ty, self.vars[&id]);
+        return ptr;
+    }
 
-        let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
-        let ptr = self
+    fn load_buffer_at(&mut self, id: VarId, ir: &Ir, idx: u32, result_id: Option<u32>) -> u32 {
+        let ty = ir.var(id).ty();
+        let ty_spv = ty.to_spirv(&mut self.b);
+        let ptr = self.access_buffer_at(id, ir, idx);
+        let ret = self
             .b
-            .access_chain(ptr_ty, None, self.arrays[&id], vec![int_0, idx])
+            .load(
+                ty_spv,
+                result_id,
+                ptr,
+                Some(spirv::MemoryAccess::ALIGNED),
+                [rspirv::dr::Operand::LiteralInt32(ty.alignment() as _)],
+            )
             .unwrap();
-        ptr
+        ret
     }
 
-    fn access_binding(&mut self, id: VarId, ir: &Ir) -> u32 {
-        let idx = self.idx.unwrap();
-        self.access_binding_at(id, ir, idx)
+    // fn access_buffer(&mut self, id: VarId, ir: &Ir) -> u32 {
+    //     let idx = self.idx.unwrap();
+    //     self.access_buffer_at(id, ir, idx)
+    // }
+
+    fn load_buffer(&mut self, id: VarId, ir: &Ir, result_id: Option<u32>) -> u32 {
+        self.load_buffer_at(id, ir, self.idx.unwrap(), result_id)
     }
+
+    fn store_buffer_at(&mut self, id: VarId, ir: &Ir, idx: u32, val: u32) {
+        let ty = ir.var(id).ty();
+        let ptr = self.access_buffer_at(id, ir, idx);
+        self.b
+            .store(
+                ptr,
+                val,
+                Some(spirv::MemoryAccess::ALIGNED),
+                [rspirv::dr::Operand::LiteralInt32(ty.alignment() as _)],
+            )
+            .unwrap();
+    }
+
     fn set_num(&mut self, num: usize) {
         if let Some(num_) = self.num {
             assert!(
@@ -781,32 +711,63 @@ impl Kernel {
         trace!("Evaluating Kernel size of schedule {:?}...", schedule);
         for id in ir.iter_dep(schedule) {
             trace!("\tVisiting Variable {}", id.0);
-            let var = &ir.var(id);
+            let var = ir.var(id);
+            let ty = var.ty();
             match var.op {
                 Op::Binding => {
-                    trace!(
-                        "\t\tFount Binding of size {}",
-                        ir.backend.arrays[&id].count()
-                    );
-                    self.set_num(ir.backend.arrays[&id].count());
+                    let num = ir.arrays[&id].size() / ty.stride();
+                    trace!("\t\tFound Variable with size {num}");
+                    self.set_num(num);
                 }
                 Op::Arange(num) => {
-                    trace!("\t\tFount Arange of num {}", num);
+                    trace!("\t\tFound Variable with size {num}");
                     self.set_num(num);
                 }
                 _ => (),
             };
         }
     }
-    ///
-    /// Records bindings before main function.
-    ///
-    fn record_bindings(&mut self, schedule: &[VarId], ir: &Ir, access: Access) {
+    fn buffer_ptr_types(&mut self, ty: &VarType) -> (u32, u32) {
+        trace!("\tRecording types for buffer of type {:?}", ty);
+        if self.buffer_ref_ty.contains_key(ty) {
+            trace!("\t\tFound in cache.");
+            return self.buffer_ref_ty[ty];
+        }
+
+        let spv_ty = ty.to_spirv(&mut self.b);
+        let ptr_ty = self
+            .b
+            .type_pointer(None, spirv::StorageClass::PhysicalStorageBuffer, spv_ty);
+        let rta = self.b.type_runtime_array(spv_ty);
+
+        self.b.decorate(
+            rta,
+            spirv::Decoration::ArrayStride,
+            vec![rspirv::dr::Operand::LiteralInt32(ty.stride() as u32)],
+        );
+
+        let st = self.b.type_struct(vec![rta]);
+        let ptr_st = self
+            .b
+            .type_pointer(None, spirv::StorageClass::PhysicalStorageBuffer, st);
+        let ret = (ptr_ty, ptr_st);
+        self.buffer_ref_ty.insert(ty.clone(), ret);
+        ret
+    }
+
+    fn record_buffer_types(&mut self, schedule: &[VarId], ir: &Ir) {
         for id in ir.iter_se(schedule) {
-            let var = &ir.var(id);
+            // if self.buffer_ref_ty.contains_key(&ty) {
+            //     continue;
+            // }
+
+            let var = ir.var(id);
             match var.op {
                 Op::Binding => {
-                    self.record_binding(id, ir, access);
+                    let ty = var.ty();
+                    let types = self.buffer_ptr_types(&ty);
+
+                    self.buffer_ref_ty.insert(ty.clone(), types);
                 }
                 _ => {}
             }
@@ -1083,12 +1044,10 @@ impl Kernel {
 
                         self.record_if(condition_id, |s| {
                             // s.b.store(ptr, ret, None, None).unwrap();
-                            let ptr = s.access_binding_at(var.deps[0], ir, idx);
-                            s.b.load(ty, Some(ret), ptr, None, None).unwrap();
+                            s.load_buffer_at(id, ir, idx, Some(ret));
                         });
                     } else {
-                        let ptr = self.access_binding_at(var.deps[0], ir, idx);
-                        self.b.load(ty, Some(ret), ptr, None, None).unwrap();
+                        self.load_buffer_at(id, ir, idx, Some(ret));
                     }
                     ret
                 }
@@ -1103,15 +1062,15 @@ impl Kernel {
                 );
                 let ty = var.ty.to_spirv(&mut self.b);
                 let idx = self.record_ops(var.deps[1], ir);
-                let ptr = self.access_binding_at(var.side_effects[0], ir, idx);
+                // let ptr = self.access_buffer_at(var.side_effects[0], ir, idx);
 
-                if var.deps.len() >= 4 {
-                    let condition_id = self.record_ops(var.deps[3], ir);
+                if var.deps.len() >= 3 {
+                    let condition_id = self.record_ops(var.deps[2], ir);
                     self.record_if(condition_id, |s| {
-                        s.b.store(ptr, src, None, None).unwrap();
+                        s.store_buffer_at(var.side_effects[0], ir, idx, src);
                     });
                 } else {
-                    self.b.store(ptr, src, None, None).unwrap();
+                    self.store_buffer_at(var.side_effects[0], ir, idx, src);
                 }
 
                 src
@@ -1133,12 +1092,7 @@ impl Kernel {
                 self.op_results.insert(id, ret);
                 ret
             }
-            Op::Binding => {
-                let ty = var.ty.to_spirv(&mut self.b);
-                let ptr = self.access_binding(id, ir);
-                let ret = self.b.load(ty, None, ptr, None, None).unwrap();
-                ret
-            }
+            Op::Binding => self.load_buffer(id, ir, None),
             Op::Select => {
                 let ty = var.ty.to_spirv(&mut self.b);
                 let cond_id = self.record_ops(var.deps[0], ir);
@@ -1159,49 +1113,13 @@ impl Kernel {
             _ => unimplemented!(),
         };
         self.op_results.insert(id, ret);
-        // // Evaluate side effects like setattr
-        // for id in var.side_effects.iter() {
-        //     let se_spv = self.record_ops(*id, ir);
-        //     let se = &ir.var(*id);
-        //     match se.op {
-        //         Op::SetAttr(elem) => {
-        //             let ty = se.ty.to_spirv(&mut self.b);
-        //             let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
-        //             let int_ty = self.b.type_int(32, 1);
-        //             let idx = self.b.constant_u32(int_ty, elem as u32);
-        //
-        //             let src = self.record_ops(se.deps[0], ir);
-        //
-        //             let ptr = self.b.access_chain(ptr_ty, None, ret, vec![idx]).unwrap();
-        //             self.b.store(ptr, src, None, None).unwrap();
-        //         }
-        //         Op::Scatter => match ir.var(se.deps[0]).op {
-        //             Op::Binding => {
-        //                 let ty = se.ty.to_spirv(&mut self.b);
-        //                 let idx = self.record_ops(se.deps[1], ir);
-        //                 let ptr = self.access_binding_at(se.deps[0], ir, idx);
-        //
-        //                 if se.deps.len() >= 3 {
-        //                     let condition_id = self.record_ops(se.deps[2], ir);
-        //                     self.record_if(condition_id, |s| {
-        //                         s.b.store(ptr, ret, None, None).unwrap();
-        //                     });
-        //                 } else {
-        //                     self.b.store(ptr, ret, None, None).unwrap();
-        //                 }
-        //             }
-        //             _ => panic!("Cannot scatter into non buffer variable!"),
-        //         },
-        //         _ => {}
-        //     }
-        // }
         ret
     }
     ///
     /// Record variables needed to store structs and variables for select.
     ///
     pub fn record_spv_vars(&mut self, schedule: &[VarId], ir: &Ir) {
-        for id in ir.iter_dep(schedule) {
+        for id in ir.iter_se(schedule) {
             let var = &ir.var(id);
             let ty = var.ty.to_spirv(&mut self.b);
             let ty_ptr = self.b.type_pointer(None, spirv::StorageClass::Function, ty);
@@ -1213,23 +1131,41 @@ impl Kernel {
                         .variable(ty_ptr, None, spirv::StorageClass::Function, None);
                     self.vars.insert(id, var);
                 }
+                Op::Binding => {
+                    let uint64 = self.b.type_int(64, 0);
+                    let ptr = self
+                        .b
+                        .type_pointer(None, spirv::StorageClass::Function, uint64);
+                    let var = self
+                        .b
+                        .variable(ptr, None, spirv::StorageClass::Function, None);
+                    self.vars.insert(id, var);
+                }
                 _ => {}
             };
         }
     }
-    pub fn compile(&mut self, ir: &Ir) -> Vec<(Binding, Array)> {
+    pub fn compile(&mut self, ir: &Ir) -> Vec<<VulkanBackend as backend::Backend>::Array> {
         trace!("Compiling Kernel...");
         // Determine kernel size
         trace!("Determining Kernel size...");
         self.record_kernel_size(&ir.schedule, ir);
 
         trace!("Kernel Configuration");
-        self.b.set_version(1, 3);
+        self.b.set_version(1, 5);
+        self.b.extension("SPV_KHR_physical_storage_buffer");
         self.b.capability(spirv::Capability::Shader);
+        self.b.capability(spirv::Capability::Int64);
+        self.b
+            .capability(spirv::Capability::PhysicalStorageBufferAddresses);
         self.b.memory_model(
-            rspirv::spirv::AddressingModel::Logical,
-            rspirv::spirv::MemoryModel::Simple,
+            spirv::AddressingModel::PhysicalStorageBuffer64,
+            spirv::MemoryModel::GLSL450,
         );
+        // self.b.memory_model(
+        //     rspirv::spirv::AddressingModel::Logical,
+        //     rspirv::spirv::MemoryModel::Simple,
+        // );
 
         // Setup default variables such as GlobalInvocationId
         trace!("Setting Up Default Variables...");
@@ -1258,45 +1194,22 @@ impl Kernel {
             .iter()
             .enumerate()
             .map(|(i, id)| {
-                let ty = &ir.var(*id).ty.clone();
+                let ty = ir.var(*id).ty();
 
-                // Record dst bindings
-
-                let ty_struct_ptr = self.record_array_struct_ty(ty);
-
-                let binding = Binding {
-                    set: 1,
-                    binding: i as _,
-                    access: Access::Write,
-                };
-                let st = self
-                    .b
-                    .variable(ty_struct_ptr, None, spirv::StorageClass::Uniform, None);
-                self.b.decorate(
-                    st,
-                    spirv::Decoration::Binding,
-                    vec![rspirv::dr::Operand::LiteralInt32(binding.binding)],
-                );
-                self.b.decorate(
-                    st,
-                    spirv::Decoration::DescriptorSet,
-                    vec![rspirv::dr::Operand::LiteralInt32(binding.set)],
-                );
+                let ptr_types = self.buffer_ptr_types(&ty);
 
                 // Create dst arrays
-                let arr = Array::create(
-                    &ir.backend.device,
-                    ty,
-                    self.num.expect("Could not determine size of kernel!"),
-                    vk::BufferUsageFlags::STORAGE_BUFFER,
-                );
-                (arr, binding, st)
+                let arr = ir.backend.create_array(self.num.unwrap() * ty.stride());
+                (arr, ty.clone())
             })
             .collect::<Vec<_>>();
 
         // Record bindings for dependencies and side-effects TODO: scatter needs write!
-        trace!("Recording Bindings for Source Variables...");
-        self.record_bindings(&ir.schedule, ir, Access::Read);
+        // trace!("Recording Bindings for Source Variables...");
+        // self.record_bindings(&ir.schedule, ir, Access::Read);
+
+        trace!("Recording buffer references");
+        self.record_buffer_types(&ir.schedule, ir);
 
         // Setup main function
         trace!("Recording main function...");
@@ -1315,6 +1228,21 @@ impl Kernel {
         self.b
             .execution_mode(main, spirv::ExecutionMode::LocalSize, vec![1, 1, 1]);
         self.b.begin_block(None).unwrap();
+
+        let addr_vars = ir
+            .schedule
+            .iter()
+            .map(|id| {
+                let uint64 = self.b.type_int(64, 0);
+                let ptr = self
+                    .b
+                    .type_pointer(None, spirv::StorageClass::Function, uint64);
+                let var = self
+                    .b
+                    .variable(ptr, None, spirv::StorageClass::Function, None);
+                var
+            })
+            .collect::<Vec<_>>();
 
         trace!("Recording Variables...");
         self.record_spv_vars(&ir.schedule, ir);
@@ -1349,18 +1277,15 @@ impl Kernel {
         let dst = dst
             .into_iter()
             .enumerate()
-            .map(|(i, (arr, binding, st))| {
-                let ty = arr.ty.to_spirv(&mut self.b);
-                let ty_int = self.b.type_int(32, 1);
-                let int_0 = self.b.constant_u32(ty_int, 0);
-
-                let ptr_ty = self.b.type_pointer(None, spirv::StorageClass::Uniform, ty);
-                let ptr = self
-                    .b
-                    .access_chain(ptr_ty, None, st, vec![int_0, self.idx.unwrap()])
-                    .unwrap();
-                self.b.store(ptr, schedule_spv[i], None, None).unwrap();
-                (binding, arr)
+            .map(|(i, (arr, ty))| {
+                self.store_buffer_at_addr(
+                    self.idx.unwrap(),
+                    arr.device_address(),
+                    &ty,
+                    addr_vars[i],
+                    schedule_spv[i],
+                );
+                arr
             })
             .collect::<Vec<_>>();
 
@@ -1375,12 +1300,13 @@ impl Kernel {
             vec![self.global_invocation_id.unwrap()],
         );
 
+        // Return destination arrays
         dst
     }
-    pub fn assemble(&self) -> Vec<u32> {
-        let module = self.b.module_ref();
+    pub fn assemble(self) -> Vec<u32> {
+        let module = self.b.module();
         trace!("{}", module.disassemble());
-        module.assemble()
+        module.assemble().clone()
     }
     pub fn num(&self) -> usize {
         self.num.unwrap()

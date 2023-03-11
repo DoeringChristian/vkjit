@@ -62,6 +62,16 @@ impl VarType {
             _ => unimplemented!(),
         }
     }
+    pub fn alignment(&self) -> usize {
+        match self {
+            VarType::Void => 0,
+            VarType::Bool => 4,
+            VarType::U32 => 4,
+            VarType::I32 => 4,
+            VarType::F32 => 4,
+            _ => unimplemented!(),
+        }
+    }
     pub fn type_id(&self) -> TypeId {
         match self {
             VarType::Bool => TypeId::of::<bool>(),
